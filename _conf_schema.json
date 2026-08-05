@@ -1,0 +1,74 @@
+{
+  "avatar_files": {
+    "type": "file",
+    "description": "WebUI头像图库",
+    "hint": "点击上传文件，可一次选择或拖入多张图片。上传后请点击右下角“保存”或“保存并关闭”，图片就会加入轮换池。删除这里的文件也会将它移出轮换池。",
+    "file_types": ["jpg", "jpeg", "png", "webp", "bmp"],
+    "default": []
+  },
+  "enabled": {
+    "type": "bool",
+    "description": "启用自动轮换",
+    "hint": "关闭后仍可使用“立即换头像”和图库管理指令。",
+    "default": true
+  },
+  "interval_hours": {
+    "type": "float",
+    "description": "自动更换间隔（小时）",
+    "hint": "默认24小时。允许的最小值为0.0833小时（约5分钟），但为了降低QQ风控风险，建议设置为6小时以上。",
+    "default": 24.0
+  },
+  "selection_mode": {
+    "type": "string",
+    "description": "轮换方式",
+    "hint": "随机模式不会连续选中同一张；顺序模式按上传时间循环。",
+    "options": ["random", "sequential"],
+    "default": "random"
+  },
+  "change_on_start": {
+    "type": "bool",
+    "description": "启动后立即更换一次",
+    "hint": "关闭时，首次自动更换会在一个完整间隔后执行。手动执行“立即换头像”不受影响。",
+    "default": false
+  },
+  "startup_delay_seconds": {
+    "type": "int",
+    "description": "启动等待时间（秒）",
+    "hint": "等待NapCat与AstrBot完成连接后再启动定时任务。",
+    "default": 30
+  },
+  "platform_id": {
+    "type": "string",
+    "description": "指定QQ平台ID",
+    "hint": "只有一个aiocqhttp平台时留空即可；存在多个QQ机器人时填写目标平台配置中的ID。",
+    "default": ""
+  },
+  "failure_retry_minutes": {
+    "type": "int",
+    "description": "失败后再次尝试（分钟）",
+    "hint": "NapCat未连接、QQ接口暂时失败或图库为空时使用。",
+    "default": 30
+  },
+  "api_retry_count": {
+    "type": "int",
+    "description": "单次更换的重试次数",
+    "hint": "不含第一次请求。默认失败后再试2次。",
+    "default": 2
+  },
+  "api_retry_delay_seconds": {
+    "type": "int",
+    "description": "接口重试间隔（秒）",
+    "default": 10
+  },
+  "api_timeout_seconds": {
+    "type": "int",
+    "description": "单次接口超时（秒）",
+    "default": 60
+  },
+  "max_upload_mb": {
+    "type": "int",
+    "description": "每张上传图片大小上限（MB）",
+    "hint": "图片会被校验并转换为兼容性更好的JPEG后保存。",
+    "default": 15
+  }
+}
