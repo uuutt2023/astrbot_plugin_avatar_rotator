@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>头像库管理</title>
+    <style>
+      :root {
+        --bg: #ffffff;
+        --surface: #f5f7fa;
+        --text: #1a1a1a;
+        --text-muted: #666;
+        --border: #dadce0;
+        --primary: #1e88e5;
+        --primary-text: #ffffff;
+        --danger: #d32f2f;
+        --success: #2e7d32;
+        --shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+      }
+      [data-theme="dark"] {
+        --bg: #1a1a1a;
+        --surface: #2a2a2a;
+        --text: #ececec;
+        --text-muted: #aaa;
+        --border: #3a3a3a;
+        --primary: #64b5f6;
+        --primary-text: #1a1a1a;
+        --danger: #ef5350;
+        --success: #66bb6a;
+        --shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "PingFang SC", sans-serif; }
+      .wrap { padding: 16px; max-width: 1200px; margin: 0 auto; }
+      h1 { margin: 0 0 4px; font-size: 20px; }
+      .muted { color: var(--text-muted); font-size: 12px; }
+      .row { display: flex; gap: 16px; flex-wrap: wrap; }
+      .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; box-shadow: var(--shadow); }
+      .upload-card { flex: 1 1 320px; min-width: 320px; }
+      .library-card { flex: 2 1 600px; min-width: 320px; }
+      .drop { border: 2px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; transition: background 0.15s; }
+      .drop:hover, .drop.dragover { background: var(--surface); border-color: var(--primary); }
+      .drop input { display: none; }
+      button {
+        background: var(--primary); color: var(--primary-text); border: 0;
+        padding: 6px 14px; border-radius: 4px; cursor: pointer; font-size: 13px;
+      }
+      button:hover { opacity: 0.9; }
+      button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
+      button.danger { background: var(--danger); color: #fff; }
+      button:disabled { opacity: 0.5; cursor: not-allowed; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-top: 12px; }
+      .item { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; }
+      .item img { width: 100%; aspect-ratio: 1; object-fit: cover; background: var(--surface); cursor: pointer; }
+      .item-body { padding: 8px; font-size: 12px; }
+      .item-body .name { font-weight: 500; word-break: break-all; }
+      .item-body .meta { color: var(--text-muted); margin-top: 4px; }
+      .item-actions { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
+      .item-actions button { padding: 4px 8px; font-size: 11px; flex: 1 1 auto; }
+      .badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; background: var(--primary); color: var(--primary-text); margin-right: 4px; }
+      .badge.crop { background: var(--success); }
+      .badge.source { background: var(--text-muted); }
+
+      .modal-mask { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
+      .modal { background: var(--bg); border-radius: 8px; padding: 16px; max-width: 90vw; max-height: 90vh; overflow: auto; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); }
+      .modal h2 { margin: 0 0 12px; font-size: 16px; }
+      .stage { position: relative; max-width: 600px; max-height: 60vh; margin: 0 auto; user-select: none; }
+      .stage canvas { display: block; max-width: 100%; max-height: 60vh; }
+      .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+      .hint { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
+      .toast { position: fixed; bottom: 24px; right: 24px; padding: 10px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow); z-index: 200; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+      .toast.show { opacity: 1; }
+      .toast.error { border-color: var(--danger); color: var(--danger); }
+      .toast.success { border-color: var(--success); color: var(--success); }
+      .stats { display: flex; gap: 16px; margin-top: 8px; flex-wrap: wrap; }
+      .stats span { background: var(--surface); padding: 4px 10px; border-radius: 4px; font-size: 12px; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>头像库管理</h1>
+      <div class="muted" id="subtitle">加载中...</div>
+      <div class="stats" id="stats"></div>
+
+      <div class="row" style="margin-top: 16px;">
+        <div class="card upload-card">
+          <h2 style="margin: 0 0 12px; font-size: 16px;">上传新头像</h2>
+          <label class="drop" id="drop">
+            <input type="file" id="file-input" accept="image/*" multiple />
+            <div>点击或拖拽图片到这里上传</div>
+            <div class="muted">支持 JPG / PNG / WebP / BMP,可一次选择多张</div>
+          </label>
+          <div class="hint" id="upload-status"></div>
+          <div style="margin-top: 12px; display: flex; gap: 8px;">
+            <button class="secondary" id="rotate-now">立即换头像</button>
+          </div>
+        </div>
+
+        <div class="card library-card">
+          <h2 style="margin: 0 0 4px; font-size: 16px;">图库 <span class="muted" id="library-count">(0)</span></h2>
+          <div class="muted">点击缩略图可裁切 (1:1),裁切后下次轮换会按此区域生效</div>
+          <div class="grid" id="grid"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="modal-root"></div>
+    <div id="toast" class="toast"></div>
+
+    <script src="/api/plugin/page/bridge-sdk.js"></script>
+    <script>
+      // === Bridge helper with status hooks ===================================
+      const bridge = window.AstrBotPluginPage;
+      const $ = (id) => document.getElementById(id);
+      const modalRoot = $("modal-root");
+      const toast = $("toast");
+
+      function showToast(message, type = "success") {
+        toast.textContent = message;
+        toast.className = "toast show " + type;
+        clearTimeout(showToast._timer);
+        showToast._timer = setTimeout(() => {
+          toast.className = "toast " + type;
+        }, 2200);
+      }
+
+      function fmtBytes(n) {
+        if (n < 1024) return n + " B";
+        if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
+        return (n / 1024 / 1024).toFixed(2) + " MB";
+      }
+
+      // === Application state =================================================
+      let library = [];
+      let schedulerState = null;
+      let cropTarget = null; // { key, name, image, srcW, srcH, crop: {x,y,w,h} | null }
+
+      function renderStats() {
+        const counts = { total: library.length, qq: 0, webui: 0, cropped: 0 };
+        for (const item of library) {
+          if (item.source === "qq") counts.qq++;
+          else if (item.source === "webui") counts.webui++;
+          if (item.has_crop) counts.cropped++;
+        }
+        $("stats").innerHTML = [
+          `<span>总数 ${counts.total}</span>`,
+          `<span>QQ 上传 ${counts.qq}</span>`,
+          `<span>WebUI 上传 ${counts.webui}</span>`,
+          `<span>已裁切 ${counts.cropped}</span>`,
+        ].join("");
+        $("library-count").textContent = `(${counts.total})`;
+      }
+
+      function renderGrid() {
+        const grid = $("grid");
+        if (!library.length) {
+          grid.innerHTML = `<div class="muted" style="grid-column: 1 / -1; padding: 24px; text-align: center;">图库为空,通过左边的上传框或 QQ 指令 / 添加轮换头像 添加头像</div>`;
+          return;
+        }
+        grid.innerHTML = library.map((item) => `
+          <div class="item" data-key="${item.key}">
+            <img data-key="${item.key}" alt="${item.name}" />
+            <div class="item-body">
+              <div class="name">${item.name}</div>
+              <div class="meta">
+                ${item.width}x${item.height} · ${fmtBytes(item.size)}
+                <br/>
+                <span class="badge source">${item.source}</span>
+                ${item.has_crop ? '<span class="badge crop">已裁切</span>' : '<span class="badge">未裁切</span>'}
+              </div>
+              <div class="item-actions">
+                <button class="crop-btn" data-key="${item.key}">${item.has_crop ? "改裁切" : "裁切"}</button>
+                <button class="clear-crop-btn secondary" data-key="${item.key}" ${item.has_crop ? "" : "disabled"}>清除</button>
+                <button class="delete-btn danger" data-key="${item.key}">删除</button>
+              </div>
+            </div>
+          </div>
+        `).join("");
+        // Load thumbnails via the image endpoint
+        for (const item of library) {
+          const img = grid.querySelector(`img[data-key="${item.key}"]`);
+          if (img) {
+            bridge.apiGet(`avatars/${encodeURIComponent(item.key)}/image`).then((res) => {
+              // The image endpoint returns a file response; the bridge auto-resolves,
+              // but we need the raw URL. Use the public upload endpoint instead.
+              img.src = `../api/v1/plugins/extensions/astrbot_plugin_avatar_rotator/avatars/${encodeURIComponent(item.key)}/image`;
+            }).catch(() => {
+              img.alt = "加载失败";
+            });
+          }
+        }
+        grid.querySelectorAll(".crop-btn").forEach((btn) => {
+          btn.onclick = (e) => openCropModal(e.currentTarget.dataset.key);
+        });
+        grid.querySelectorAll(".clear-crop-btn").forEach((btn) => {
+          btn.onclick = (e) => clearCrop(e.currentTarget.dataset.key);
+        });
+        grid.querySelectorAll(".delete-btn").forEach((btn) => {
+          btn.onclick = (e) => deleteAvatar(e.currentTarget.dataset.key);
+        });
+      }
+
+      async function refresh() {
+        try {
+          const res = await bridge.apiGet("avatars");
+          library = res.avatars || [];
+          schedulerState = res.state || null;
+          if (schedulerState) {
+            const last = schedulerState.last_avatar
+              ? new Date(schedulerState.last_changed_at * 1000).toLocaleString()
+              : "尚未更换";
+            const next = schedulerState.next_run_at
+              ? new Date(schedulerState.next_run_at * 1000).toLocaleString()
+              : "尚未安排";
+            $("subtitle").textContent = `上次更换: ${last} · 下次计划: ${next} · ${schedulerState.paused ? "已暂停" : "运行中"}`;
+          }
+          renderStats();
+          renderGrid();
+        } catch (err) {
+          showToast("加载失败: " + err.message, "error");
+        }
+      }
+
+      // === Upload ============================================================
+      async function uploadFiles(fileList) {
+        if (!fileList || !fileList.length) return;
+        let ok = 0, fail = 0;
+        for (const file of fileList) {
+          $("upload-status").textContent = `上传中: ${file.name} ...`;
+          try {
+            await bridge.upload("avatars/upload", file);
+            ok++;
+          } catch (err) {
+            fail++;
+            showToast(`上传 ${file.name} 失败: ${err.message}`, "error");
+          }
+        }
+        $("upload-status").textContent = `本次上传 ${ok} 张,失败 ${fail} 张`;
+        setTimeout(() => { $("upload-status").textContent = ""; }, 3000);
+        await refresh();
+      }
+
+      const drop = $("drop");
+      const fileInput = $("file-input");
+      drop.addEventListener("click", () => fileInput.click());
+      fileInput.addEventListener("change", (e) => {
+        uploadFiles(e.target.files);
+        fileInput.value = "";
+      });
+      ["dragenter", "dragover"].forEach((evt) => {
+        drop.addEventListener(evt, (e) => {
+          e.preventDefault();
+          drop.classList.add("dragover");
+        });
+      });
+      ["dragleave", "drop"].forEach((evt) => {
+        drop.addEventListener(evt, (e) => {
+          e.preventDefault();
+          drop.classList.remove("dragover");
+        });
+      });
+      drop.addEventListener("drop", (e) => {
+        if (e.dataTransfer && e.dataTransfer.files) {
+          uploadFiles(e.dataTransfer.files);
+        }
+      });
+
+      // === Manual rotate =====================================================
+      $("rotate-now").onclick = async () => {
+        try {
+          const r = await bridge.apiPost("rotate", {});
+          showToast("已更换: " + (r.rotated || ""), "success");
+          await refresh();
+        } catch (err) {
+          showToast("更换失败: " + err.message, "error");
+        }
+      };
+
+      // === Delete avatar ====================================================
+      async function deleteAvatar(key) {
+        const item = library.find((i) => i.key === key);
+        if (!item) return;
+        if (!confirm(`确定删除 ${item.name} ?`)) return;
+        try {
+          await bridge.apiPost(`avatars/${encodeURIComponent(key)}/delete`, {});
+          showToast("已删除", "success");
+          await refresh();
+        } catch (err) {
+          showToast("删除失败: " + err.message, "error");
+        }
+      }
+
+      // === Clear crop =======================================================
+      async function clearCrop(key) {
+        try {
+          await bridge.apiPost(`avatars/${encodeURIComponent(key)}/crop`, {});
+          showToast("已清除裁切", "success");
+          await refresh();
+        } catch (err) {
+          showToast("清除失败: " + err.message, "error");
+        }
+      }
+
+      // === Crop modal =======================================================
+      // 1:1 aspect crop overlay. Mouse + drag to select. Snaps to a square.
+      function openCropModal(key) {
+        const item = library.find((i) => i.key === key);
+        if (!item) return;
+        const image = new Image();
+        image.crossOrigin = "anonymous";
+        image.onload = () => {
+          cropTarget = {
+            key,
+            name: item.name,
+            image,
+            srcW: item.width,
+            srcH: item.height,
+            crop: item.crop ? { ...item.crop } : null,
+          };
+          showCropModal();
+        };
+        image.onerror = () => showToast("加载图片失败", "error");
+        image.src = `../api/v1/plugins/extensions/astrbot_plugin_avatar_rotator/avatars/${encodeURIComponent(key)}/image`;
+      }
+
+      function showCropModal() {
+        const t = cropTarget;
+        const target = t.crop
+          ? t.crop
+          : defaultSquare(t.image.naturalWidth, t.image.naturalHeight);
+        const modal = document.createElement("div");
+        modal.className = "modal-mask";
+        modal.innerHTML = `
+          <div class="modal" role="dialog">
+            <h2>裁切 ${t.name}</h2>
+            <div class="muted">原图 ${t.srcW}x${t.srcH},拖拽框选 1:1 裁切区域</div>
+            <div class="stage" id="stage"></div>
+            <div class="hint">裁切数据保存在 crops.json,下次轮换时按此区域裁切后上传</div>
+            <div class="modal-actions">
+              <button class="secondary" id="reset">重置</button>
+              <button class="danger" id="cancel">取消</button>
+              <button id="save">保存</button>
+            </div>
+          </div>
+        `;
+        modalRoot.replaceChildren(modal);
+        const stage = $("stage");
+        const canvas = document.createElement("canvas");
+        stage.appendChild(canvas);
+        const ctx = canvas.getContext("2d");
+        const dispW = Math.min(t.image.naturalWidth, 600);
+        const scale = dispW / t.image.naturalWidth;
+        const dispH = t.image.naturalHeight * scale;
+        canvas.width = dispW;
+        canvas.height = dispH;
+        canvas.style.width = dispW + "px";
+        canvas.style.height = dispH + "px";
+
+        const rect = {
+          x: target.x * scale,
+          y: target.y * scale,
+          size: Math.min(target.w, target.h) * scale,
+        };
+        let dragging = null;
+
+        function draw() {
+          ctx.drawImage(t.image, 0, 0, dispW, dispH);
+          ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+          ctx.fillRect(0, 0, dispW, dispH);
+          ctx.clearRect(rect.x, rect.y, rect.size, rect.size);
+          ctx.drawImage(
+            t.image,
+            rect.x / scale,
+            rect.y / scale,
+            rect.size / scale,
+            rect.size / scale,
+            rect.x,
+            rect.y,
+            rect.size,
+            rect.size,
+          );
+          ctx.strokeStyle = "#1e88e5";
+          ctx.lineWidth = 2;
+          ctx.strokeRect(rect.x, rect.y, rect.size, rect.size);
+        }
+        draw();
+
+        canvas.addEventListener("mousedown", (e) => {
+          const r = canvas.getBoundingClientRect();
+          const cx = e.clientX - r.left;
+          const cy = e.clientY - r.top;
+          if (cx >= rect.x && cx <= rect.x + rect.size && cy >= rect.y && cy <= rect.y + rect.size) {
+            dragging = { startX: cx, startY: cy, origX: rect.x, origY: rect.y };
+          } else {
+            const size = Math.min(120, Math.min(dispW, dispH) / 2);
+            rect.x = Math.max(0, Math.min(cx - size / 2, dispW - size));
+            rect.y = Math.max(0, Math.min(cy - size / 2, dispH - size));
+            rect.size = Math.min(rect.size, Math.min(dispW - rect.x, dispH - rect.y));
+            draw();
+          }
+        });
+        canvas.addEventListener("mousemove", (e) => {
+          if (!dragging) return;
+          const r = canvas.getBoundingClientRect();
+          const cx = e.clientX - r.left;
+          const cy = e.clientY - r.top;
+          rect.x = Math.max(0, Math.min(dispW - rect.size, dragging.origX + (cx - dragging.startX)));
+          rect.y = Math.max(0, Math.min(dispH - rect.size, dragging.origY + (cy - dragging.startY)));
+          draw();
+        });
+        ["mouseup", "mouseleave"].forEach((evt) =>
+          canvas.addEventListener(evt, () => { dragging = null; }),
+        );
+
+        // Touch support
+        canvas.addEventListener("touchstart", (e) => {
+          const t0 = e.touches[0];
+          canvas.dispatchEvent(new MouseEvent("mousedown", { clientX: t0.clientX, clientY: t0.clientY }));
+          e.preventDefault();
+        });
+        canvas.addEventListener("touchmove", (e) => {
+          const t0 = e.touches[0];
+          canvas.dispatchEvent(new MouseEvent("mousemove", { clientX: t0.clientX, clientY: t0.clientY }));
+          e.preventDefault();
+        });
+        canvas.addEventListener("touchend", () => {
+          canvas.dispatchEvent(new MouseEvent("mouseup"));
+        });
+
+        $("cancel").onclick = () => modal.remove();
+        $("reset").onclick = () => {
+          const def = defaultSquare(t.image.naturalWidth, t.image.naturalHeight);
+          rect.x = def.x * scale;
+          rect.y = def.y * scale;
+          rect.size = Math.min(def.w, def.h) * scale;
+          draw();
+        };
+        $("save").onclick = async () => {
+          const payload = {
+            x: Math.round(rect.x / scale),
+            y: Math.round(rect.y / scale),
+            w: Math.round(rect.size / scale),
+            h: Math.round(rect.size / scale),
+            aspect: 1.0,
+          };
+          try {
+            await bridge.apiPost(`avatars/${encodeURIComponent(t.key)}/crop`, payload);
+            showToast("裁切已保存", "success");
+            modal.remove();
+            await refresh();
+          } catch (err) {
+            showToast("保存失败: " + err.message, "error");
+          }
+        };
+      }
+
+      function defaultSquare(w, h) {
+        const size = Math.min(w, h);
+        return {
+          x: Math.floor((w - size) / 2),
+          y: Math.floor((h - size) / 2),
+          w: size,
+          h: size,
+        };
+      }
+
+      // === Boot ==============================================================
+      bridge.ready().then((ctx) => {
+        document.documentElement.setAttribute("data-theme", ctx.isDark ? "dark" : "light");
+        bridge.onContext((next) => {
+          document.documentElement.setAttribute("data-theme", next.isDark ? "dark" : "light");
+        });
+        refresh();
+      });
+    </script>
+  </body>
+</html>

@@ -19,6 +19,22 @@ import astrbot.api.message_components as Comp
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import filter
 from astrbot.api.star import Context, Star
+
+try:
+    from astrbot.api.web import (
+        PluginUploadFile,
+        error_response,
+        file_response,
+        json_response,
+        request,
+    )
+except ImportError:  # pragma: no cover - older AstrBot without page bridge
+    PluginUploadFile = None  # type: ignore[assignment]
+    error_response = None  # type: ignore[assignment]
+    file_response = None  # type: ignore[assignment]
+    json_response = None  # type: ignore[assignment]
+    request = None  # type: ignore[assignment]
+
 from astrbot.core.platform.sources.aiocqhttp.aiocqhttp_message_event import (
     AiocqhttpMessageEvent,
 )
@@ -27,6 +43,21 @@ from astrbot.core.star.star_tools import StarTools
 
 SUPPORTED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 MAX_IMAGES_PER_COMMAND = 30
+PLUGIN_NAME = "astrbot_plugin_avatar_rotator"
+
+
+def _ok(data: Any) -> Any:
+    """Wrap a payload in the standard JSON response helper if available."""
+    if json_response is not None:
+        return json_response(data)
+    return {"status": "ok", "data": data}
+
+
+def _err(message: str, status_code: int = 400) -> Any:
+    """Wrap an error message in the standard error response helper if available."""
+    if error_response is not None:
+        return error_response(message, status_code=status_code)
+    return {"status": "error", "message": message}
 
 
 class AvatarRotatorPlugin(Star):
@@ -63,10 +94,123 @@ class AvatarRotatorPlugin(Star):
             except (OSError, json.JSONDecodeError) as exc:
                 logger.warning("[AvatarRotator] Failed to load state: %s", exc)
 
+        self.crops_path = self.data_dir / "crops.json"
+        self.crops: dict[str, dict[str, float]] = {}
+        if self.crops_path.exists():
+            try:
+                loaded = json.loads(self.crops_path.read_text(encoding="utf-8"))
+                if isinstance(loaded, dict):
+                    for key, value in loaded.items():
+                        if isinstance(value, dict) and self._is_valid_crop(value):
+                            self.crops[key] = value
+            except (OSError, json.JSONDecodeError) as exc:
+                logger.warning("[AvatarRotator] Failed to load crops: %s", exc)
+
         self._rotation_lock = asyncio.Lock()
         self._stopping = False
         self._worker_task: asyncio.Task | None = None
         self._ensure_worker()
+        self._register_webui_routes()
+
+    @staticmethod
+    def _is_valid_crop(value: Any) -> bool:
+        """Return True if ``value`` looks like a crop metadata entry."""
+        if not isinstance(value, dict):
+            return False
+        try:
+            x = float(value.get("x", 0))
+            y = float(value.get("y", 0))
+            w = float(value.get("w", 0))
+            h = float(value.get("h", 0))
+        except (TypeError, ValueError):
+            return False
+        return w > 0 and h > 0 and x >= 0 and y >= 0
+
+    def _save_crops(self) -> None:
+        """Atomically persist the crop metadata to disk."""
+        temporary = self.crops_path.with_suffix(".json.tmp")
+        try:
+            temporary.write_text(
+                json.dumps(self.crops, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            temporary.replace(self.crops_path)
+        except OSError as exc:
+            logger.error("[AvatarRotator] Failed to save crops: %s", exc)
+
+    def _register_webui_routes(self) -> None:
+        """Register WebUI HTTP routes for the browser companion page."""
+        if request is None:
+            logger.debug(
+                "[AvatarRotator] astrbot.api.web unavailable; WebUI page disabled"
+            )
+            return
+        register_web_api = getattr(self.context, "register_web_api", None)
+        if not callable(register_web_api):
+            logger.debug(
+                "[AvatarRotator] context.register_web_api missing; WebUI page disabled"
+            )
+            return
+
+        routes = [
+            (
+                f"/{PLUGIN_NAME}/avatars",
+                self._webui_list_avatars,
+                ["GET"],
+                "List avatars in the persistent library",
+            ),
+            (
+                f"/{PLUGIN_NAME}/avatars/upload",
+                self._webui_upload_avatar,
+                ["POST"],
+                "Upload a new avatar image",
+            ),
+            (
+                f"/{PLUGIN_NAME}/avatars/<key>/image",
+                self._webui_get_avatar_image,
+                ["GET"],
+                "Fetch the original bytes of an avatar",
+            ),
+            (
+                f"/{PLUGIN_NAME}/avatars/<key>/crop",
+                self._webui_set_or_clear_crop,
+                ["POST"],
+                "Set or clear crop metadata; payload {x,y,w,h} sets, empty clears",
+            ),
+            (
+                f"/{PLUGIN_NAME}/avatars/<key>/delete",
+                self._webui_delete_avatar,
+                ["POST"],
+                "Delete an avatar from the library",
+            ),
+            (
+                f"/{PLUGIN_NAME}/avatars/<key>/stripped",
+                self._webui_download_stripped,
+                ["GET"],
+                "Download the cropped preview of an avatar",
+            ),
+            (
+                f"/{PLUGIN_NAME}/rotate",
+                self._webui_rotate_now,
+                ["POST"],
+                "Trigger an immediate avatar rotation",
+            ),
+            (
+                f"/{PLUGIN_NAME}/state",
+                self._webui_state,
+                ["GET"],
+                "Get the current scheduler state",
+            ),
+        ]
+        for route, view, methods, desc in routes:
+            try:
+                register_web_api(route, view, methods, desc)
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.warning(
+                    "[AvatarRotator] Failed to register WebUI route %s: %s",
+                    route,
+                    exc,
+                )
 
     def _ensure_worker(self) -> None:
         """Start the scheduler once when an event loop is available."""
@@ -239,9 +383,7 @@ class AvatarRotatorPlugin(Star):
                 continue
             get_client = getattr(platform, "get_client", None)
             client = (
-                get_client()
-                if callable(get_client)
-                else getattr(platform, "bot", None)
+                get_client() if callable(get_client) else getattr(platform, "bot", None)
             )
             if client is not None:
                 matches.append((client, platform_id or "aiocqhttp"))
@@ -293,20 +435,22 @@ class AvatarRotatorPlugin(Star):
             except (TypeError, ValueError):
                 timeout = 60
 
+            payload_source = await self._prepare_payload_source(selected)
+
             last_error: Exception | None = None
             for attempt in range(retry_count + 1):
                 try:
                     call_action = getattr(bot, "call_action", None)
                     if callable(call_action):
-                        request = call_action(
-                            action="set_qq_avatar", file=str(selected.resolve())
+                        call = call_action(
+                            action="set_qq_avatar", file=str(payload_source)
                         )
                     else:
                         set_avatar = getattr(bot, "set_qq_avatar", None)
                         if not callable(set_avatar):
                             raise RuntimeError("当前QQ客户端不提供set_qq_avatar接口")
-                        request = set_avatar(file=str(selected.resolve()))
-                    await asyncio.wait_for(request, timeout=timeout)
+                        call = set_avatar(file=str(payload_source))
+                    await asyncio.wait_for(call, timeout=timeout)
                     last_error = None
                     break
                 except asyncio.CancelledError:
@@ -341,6 +485,396 @@ class AvatarRotatorPlugin(Star):
             logger.info("[AvatarRotator] QQ avatar changed to %s", selected.name)
             return selected
 
+    async def _prepare_payload_source(self, selected: Path) -> Path:
+        """Apply crop metadata to ``selected`` if any, producing a payload path.
+
+        QQ avatar framing is a fixed square: the QT client re-centers the
+        uploaded image and discards whatever does not fit. To control the
+        framing precisely the plugin accepts a per-image crop rectangle in
+        source coordinates; this routine materializes that crop into a
+        temporary JPEG used for the upload, then schedules its cleanup.
+
+        Args:
+            selected: Original avatar file path.
+
+        Returns:
+            Either ``selected`` itself (if no crop is configured) or a path
+            to a temporary cropped copy that the caller must NOT delete by
+            reference (it is managed by :meth:`_finalize_payload_source`).
+        """
+        crop = self.crops.get(self._avatar_key(selected))
+        if not crop:
+            return selected
+        digest = hashlib.sha256(
+            f"{selected.resolve()}::{json.dumps(crop, sort_keys=True)}".encode("utf-8")
+        ).hexdigest()[:12]
+        target = self.data_dir / f".cropped_{digest}.jpg"
+        try:
+            target_exists = target.is_file()
+        except OSError:
+            target_exists = False
+        if target_exists:
+            return target
+        try:
+            await asyncio.to_thread(self._apply_crop, selected, target, crop)
+        except Exception as exc:
+            logger.warning(
+                "[AvatarRotator] Failed to crop %s, sending original: %s",
+                selected.name,
+                exc,
+            )
+            return selected
+        return target
+
+    @staticmethod
+    def _apply_crop(source: Path, target: Path, crop: dict[str, float]) -> None:
+        """Materialise a cropped JPEG on disk (synchronous, runs in a thread)."""
+        with PILImage.open(source) as image:
+            image = ImageOps.exif_transpose(image)
+            image.load()
+            width, height = image.size
+            x = max(0, min(int(round(float(crop["x"]))), max(0, width - 1)))
+            y = max(0, min(int(round(float(crop["y"]))), max(0, height - 1)))
+            w = max(1, min(int(round(float(crop["w"]))), width - x))
+            h = max(1, min(int(round(float(crop["h"]))), height - y))
+            box = (x, y, x + w, y + h)
+            cropped = image.crop(box)
+            if cropped.mode not in {"RGB"}:
+                cropped = cropped.convert("RGB")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            cropped.save(target, format="JPEG", quality=94, optimize=True)
+
+    async def _webui_list_avatars(self) -> Any:
+        """Return a JSON-friendly list of avatars + crop state."""
+        items: list[dict[str, Any]] = []
+        for path in self._list_avatars():
+            key = self._avatar_key(path)
+            try:
+                size = path.stat().st_size
+            except OSError:
+                size = 0
+            crop = self.crops.get(key)
+            try:
+                with PILImage.open(path) as img:
+                    width, height = img.size
+            except Exception:
+                width, height = 0, 0
+            items.append(
+                {
+                    "key": key,
+                    "name": path.name,
+                    "size": size,
+                    "width": width,
+                    "height": height,
+                    "source": "qq" if not self._is_webui_avatar(path) else "webui",
+                    "crop": crop,
+                    "has_crop": crop is not None,
+                }
+            )
+        return _ok(
+            {
+                "avatars": items,
+                "selection_mode": self.config.get("selection_mode", "random"),
+                "state": {
+                    "last_avatar": self.state.get("last_avatar", ""),
+                    "last_changed_at": self.state.get("last_changed_at", 0.0),
+                    "next_run_at": self.state.get("next_run_at", 0.0),
+                    "paused": bool(self.state.get("paused", False)),
+                    "last_error": self.state.get("last_error", ""),
+                },
+            }
+        )
+
+    async def _webui_upload_avatar(self) -> Any:
+        """Receive a multipart upload via the page bridge."""
+        if request is None:
+            return _err("page bridge unavailable", status_code=503)
+        try:
+            files = await request.files()
+        except Exception as exc:
+            return _err(f"failed to parse upload: {exc}", status_code=400)
+        upload = files.get("file") if isinstance(files, dict) else None
+        if not isinstance(upload, PluginUploadFile):
+            return _err("missing 'file' field", status_code=400)
+        raw_bytes = await upload.read()
+        if not raw_bytes:
+            return _err("empty upload", status_code=400)
+        try:
+            max_upload_mb = max(1, min(int(self.config.get("max_upload_mb", 15)), 50))
+        except (TypeError, ValueError):
+            max_upload_mb = 15
+        if len(raw_bytes) > max_upload_mb * 1024 * 1024:
+            return _err(f"file exceeds {max_upload_mb} MB", status_code=413)
+        original_name = Path(upload.filename or "upload.jpg").name
+        suffix = Path(original_name).suffix.lower()
+        if suffix not in SUPPORTED_EXTENSIONS:
+            suffix = ".jpg"
+        # Reuse the existing normalise pipeline for consistency.
+        try:
+            normalized = await asyncio.to_thread(self._normalise_image_bytes, raw_bytes)
+        except ValueError as exc:
+            return _err(str(exc), status_code=400)
+        digest = hashlib.sha256(normalized).hexdigest()[:12]
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        destination = self.avatar_dir / f"{timestamp}_{digest}.jpg"
+        temporary = destination.with_suffix(".jpg.tmp")
+        try:
+            await asyncio.to_thread(temporary.write_bytes, normalized)
+            temporary.replace(destination)
+        except OSError as exc:
+            temporary.unlink(missing_ok=True)
+            return _err(f"failed to save upload: {exc}", status_code=500)
+        # Track the new upload in the WebUI file config so the existing
+        # _list_avatars() pipeline picks it up without further changes.
+        existing = self.config.get("avatar_files", [])
+        if not isinstance(existing, list):
+            existing = []
+        relative_key = self._avatar_key(destination)
+        if relative_key not in existing:
+            new_list = list(existing) + [relative_key]
+            self.config["avatar_files"] = new_list
+            try:
+                save_async = getattr(self.config, "save_config_async", None)
+                if callable(save_async):
+                    await save_async()
+                else:
+                    await asyncio.to_thread(self.config.save_config)
+            except Exception as exc:
+                logger.warning(
+                    "[AvatarRotator] Failed to persist avatar_files: %s",
+                    exc,
+                )
+        return _ok(
+            {
+                "key": self._avatar_key(destination),
+                "name": destination.name,
+                "size": len(normalized),
+            }
+        )
+
+    @staticmethod
+    def _normalise_image_bytes(raw_bytes: bytes) -> bytes:
+        """Convert any supported image to a JPEG byte string (synchronous)."""
+        with PILImage.open(BytesIO(raw_bytes)) as image:
+            image.seek(0)
+            image = ImageOps.exif_transpose(image)
+            image.load()
+            if image.width < 32 or image.height < 32:
+                raise ValueError("图片尺寸不能小于32×32")
+            image.thumbnail((2048, 2048), PILImage.Resampling.LANCZOS)
+            if image.mode in {"RGBA", "LA"} or "transparency" in image.info:
+                rgba = image.convert("RGBA")
+                background = PILImage.new("RGB", rgba.size, "white")
+                background.paste(rgba, mask=rgba.getchannel("A"))
+                image = background
+            else:
+                image = image.convert("RGB")
+            output = BytesIO()
+            image.save(output, format="JPEG", quality=94, optimize=True)
+            return output.getvalue()
+
+    def _resolve_avatar_by_key(self, key: str) -> Path | None:
+        """Look up an avatar path by its stable key suffix."""
+        for path in self._list_avatars():
+            if self._avatar_key(path) == key:
+                return path
+        return None
+
+    def _webui_get_avatar_image(self, key: str) -> Any:
+        """Return the original avatar bytes for the cropper preview."""
+        path = self._resolve_avatar_by_key(key)
+        if path is None:
+            return _err("avatar not found", status_code=404)
+        try:
+            path.read_bytes()
+        except OSError as exc:
+            return _err(f"failed to read avatar: {exc}", status_code=500)
+
+        return file_response(
+            str(path),
+            filename=path.name,
+            content_type="image/jpeg",
+        )
+
+    async def _webui_set_or_clear_crop(self, key: str) -> Any:
+        """Persist the crop rectangle or clear it depending on the payload.
+
+        A payload containing ``x``, ``y``, ``w`` and ``h`` (all positive
+        numbers) sets the crop. Any other payload (missing keys, empty
+        body, or non-positive dimensions) clears the crop.
+
+        Args:
+            key: Avatar key (relative path under the plugin data dir).
+
+        Returns:
+            JSON response with the new crop (or ``cleared: true``).
+        """
+        path = self._resolve_avatar_by_key(key)
+        if path is None:
+            return _err("avatar not found", status_code=404)
+        if request is None:
+            return _err("page bridge unavailable", status_code=503)
+        try:
+            payload = await request.json(default={})
+        except Exception as exc:
+            return _err(f"invalid JSON: {exc}", status_code=400)
+        if not isinstance(payload, dict):
+            payload = {}
+        try:
+            x = float(payload.get("x", 0))
+            y = float(payload.get("y", 0))
+            w = float(payload.get("w", 0))
+            h = float(payload.get("h", 0))
+        except (TypeError, ValueError):
+            x = y = w = h = 0
+        if w <= 0 or h <= 0:
+            self.crops.pop(key, None)
+            self._save_crops()
+            self._cleanup_stale_crop_cache()
+            return _ok({"cleared": True})
+        try:
+            with PILImage.open(path) as img:
+                width, height = img.size
+        except Exception as exc:
+            return _err(f"failed to read avatar: {exc}", status_code=400)
+        if x < 0 or y < 0 or x + w > width + 0.5 or y + h > height + 0.5:
+            return _err(
+                f"crop [{x},{y},{x + w},{y + h}] outside image {width}x{height}",
+                status_code=400,
+            )
+        try:
+            aspect_value = float(payload.get("aspect", 1.0))
+        except (TypeError, ValueError):
+            aspect_value = 1.0
+        self.crops[key] = {
+            "x": x,
+            "y": y,
+            "w": w,
+            "h": h,
+            "aspect": aspect_value,
+            "src_w": width,
+            "src_h": height,
+        }
+        self._save_crops()
+        self._cleanup_stale_crop_cache()
+        return _ok({"crop": self.crops[key]})
+
+    async def _webui_delete_avatar(self, key: str) -> Any:
+        """Delete an avatar from the library and clear its crop entry."""
+        path = self._resolve_avatar_by_key(key)
+        if path is None:
+            return _err("avatar not found", status_code=404)
+        webui_avatar = self._is_webui_avatar(path)
+        try:
+            path.unlink()
+        except OSError as exc:
+            return _err(f"delete failed: {exc}", status_code=500)
+        if webui_avatar:
+            existing = self.config.get("avatar_files", [])
+            if isinstance(existing, list):
+                retained = [
+                    value
+                    for value in existing
+                    if not (
+                        isinstance(value, str)
+                        and self._avatar_key(self.data_dir / Path(value)) == key
+                    )
+                ]
+                self.config["avatar_files"] = retained
+                try:
+                    save_async = getattr(self.config, "save_config_async", None)
+                    if callable(save_async):
+                        await save_async()
+                    else:
+                        await asyncio.to_thread(self.config.save_config)
+                except Exception as exc:
+                    logger.warning(
+                        "[AvatarRotator] Failed to update avatar_files: %s",
+                        exc,
+                    )
+        self.crops.pop(key, None)
+        self._save_crops()
+        self._cleanup_stale_crop_cache()
+        if self.state.get("last_avatar") in {key, path.name}:
+            self.state["last_avatar"] = ""
+            self._save_state()
+        return _ok({"deleted": True})
+
+    async def _webui_rotate_now(self) -> Any:
+        """Trigger an immediate rotation using the configured selection."""
+        try:
+            bot, _ = self._get_background_bot()
+        except RuntimeError as exc:
+            return _err(str(exc), status_code=400)
+        try:
+            selected = await self._rotate_avatar(bot)
+        except Exception as exc:
+            return _err(str(exc), status_code=500)
+        return _ok({"rotated": self._avatar_key(selected)})
+
+    def _webui_state(self) -> Any:
+        """Return a snapshot of the scheduler + crop state."""
+        return _ok(
+            {
+                "paused": bool(self.state.get("paused", False)),
+                "enabled": bool(self.config.get("enabled", True)),
+                "selection_mode": self.config.get("selection_mode", "random"),
+                "interval_seconds": self._interval_seconds(),
+                "last_avatar": self.state.get("last_avatar", ""),
+                "last_changed_at": self.state.get("last_changed_at", 0.0),
+                "next_run_at": self.state.get("next_run_at", 0.0),
+                "last_error": self.state.get("last_error", ""),
+                "avatar_count": len(self._list_avatars()),
+                "crop_count": len(self.crops),
+            }
+        )
+
+    def _webui_download_stripped(self, key: str) -> Any:
+        """Return the cropped PNG used for one avatar (or the original)."""
+        path = self._resolve_avatar_by_key(key)
+        if path is None:
+            return _err("avatar not found", status_code=404)
+        crop = self.crops.get(key)
+        if not crop:
+            return file_response(
+                str(path),
+                filename=path.name,
+                content_type="image/jpeg",
+            )
+        digest = hashlib.sha256(
+            f"{path.resolve()}::{json.dumps(crop, sort_keys=True)}".encode("utf-8")
+        ).hexdigest()[:12]
+        target = self.data_dir / f".cropped_{digest}.jpg"
+        try:
+            target_exists = target.is_file()
+        except OSError:
+            target_exists = False
+        if not target_exists:
+            try:
+                self._apply_crop(path, target, crop)
+            except Exception as exc:
+                return _err(f"failed to crop: {exc}", status_code=500)
+
+        return file_response(
+            str(target),
+            filename=f"cropped_{path.stem}.jpg",
+            content_type="image/jpeg",
+        )
+
+    def _cleanup_stale_crop_cache(self) -> None:
+        """Remove cached cropped payload files older than 7 days."""
+        cutoff = time.time_ns() - 7 * 24 * 3600 * 1_000_000_000
+        try:
+            entries = list(self.data_dir.glob(".cropped_*.jpg"))
+        except OSError:
+            return
+        for entry in entries:
+            try:
+                if entry.is_file() and entry.stat().st_mtime_ns < cutoff:
+                    entry.unlink(missing_ok=True)
+            except OSError:
+                continue
+
     async def _worker_loop(self) -> None:
         """Run the persistent fixed-interval rotation scheduler."""
         try:
@@ -364,9 +898,7 @@ class AvatarRotatorPlugin(Star):
                 now = time.time()
                 interval = self._interval_seconds()
                 next_run = float(self.state.get("next_run_at", 0.0) or 0.0)
-                stored_interval = float(
-                    self.state.get("interval_seconds", 0.0) or 0.0
-                )
+                stored_interval = float(self.state.get("interval_seconds", 0.0) or 0.0)
                 if next_run <= 0:
                     next_run = (
                         now
@@ -430,9 +962,7 @@ class AvatarRotatorPlugin(Star):
             raise ValueError(f"读取图片失败：{exc}") from exc
 
         try:
-            max_upload_mb = max(
-                1, min(int(self.config.get("max_upload_mb", 15)), 50)
-            )
+            max_upload_mb = max(1, min(int(self.config.get("max_upload_mb", 15)), 50))
         except (TypeError, ValueError):
             max_upload_mb = 15
         if len(raw_bytes) > max_upload_mb * 1024 * 1024:
@@ -558,17 +1088,14 @@ class AvatarRotatorPlugin(Star):
             return
         lines = [f"头像库共有 {len(avatars)} 张："]
         lines.extend(
-            f"{index}. [{'WebUI' if self._is_webui_avatar(path) else 'QQ'}] "
-            f"{path.name}"
+            f"{index}. [{'WebUI' if self._is_webui_avatar(path) else 'QQ'}] {path.name}"
             for index, path in enumerate(avatars, 1)
         )
         yield event.plain_result("\n".join(lines))
 
     @filter.permission_type(filter.PermissionType.ADMIN)
     @filter.command("删除轮换头像")
-    async def delete_avatar(
-        self, event: AiocqhttpMessageEvent, avatar_number: int = 0
-    ):
+    async def delete_avatar(self, event: AiocqhttpMessageEvent, avatar_number: int = 0):
         """Delete one uploaded avatar by its one-based list index.
 
         Args:

@@ -1,5 +1,12 @@
 # 更新日志
 
+## 1.2.0
+
+- 增加 AstrBot WebUI Page:在 AstrBot 侧边栏出现「头像库」入口,可上传图片、查看持久化图库、按 1:1 比例裁切、保存裁切数据并清除。
+- 裁切元数据保存到 `crops.json`;每次轮换时按元数据裁切原图后上传,原图本身保持不变。
+- 后端新增 9 个 Web API,前缀 `/astrbot_plugin_avatar_rotator/...`,挂在 AstrBot 插件页面 iframe 的 `window.AstrBotPluginPage` 桥上。
+- 兼容既有 QQ 指令 `/添加轮换头像` 等流程,WebUI 与 QQ 共享同一图库。
+
 ## 1.1.0
 
 - 增加 AstrBot WebUI 原生多图片上传入口。
