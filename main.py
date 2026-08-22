@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import json
 import random
@@ -58,6 +59,68 @@ def _err(message: str, status_code: int = 400) -> Any:
     if error_response is not None:
         return error_response(message, status_code=status_code)
     return {"status": "error", "message": message}
+
+
+def _wants_data_url() -> bool:
+    """Return True if the current request asked for an inline data URL response.
+
+    The dashboard iframe's bridge SDK uses postMessage to call plugin Web API
+    endpoints; ``apiGet`` always resolves to a JSON value (never bytes), so
+    binary ``file_response`` payloads cannot be displayed by an ``<img>`` tag
+    inside the iframe. When the client passes ``?format=data_url``, return a
+    ``{"image": "data:<mime>;base64,..."}`` envelope that the page can assign
+    straight to ``img.src``. Any other (or absent) value keeps the default
+    ``file_response`` behaviour for direct HTTP clients.
+    """
+    if request is None:
+        return False
+    try:
+        value = request.query.get("format")
+    except Exception:
+        return False
+    return isinstance(value, str) and value.strip().lower() in {
+        "data_url",
+        "data-url",
+        "dataurl",
+    }
+
+
+def _image_data_url(path: Path, content_type: str = "image/jpeg") -> str:
+    """Encode ``path`` as a ``data:<mime>;base64,...`` URI string."""
+    raw = path.read_bytes()
+    encoded = base64.b64encode(raw).decode("ascii")
+    return f"data:{content_type};base64,{encoded}"
+
+
+def _maybe_image_response(
+    path: Path,
+    *,
+    content_type: str = "image/jpeg",
+    filename: str | None = None,
+) -> Any:
+    """Return either a data-URL JSON envelope or a Starlette FileResponse.
+
+    ``_wants_data_url()`` decides which shape the caller asked for; the default
+    shape is the binary ``file_response``, which is what direct HTTP clients
+    (curl, the dashboard's own ``bridge.download`` flow, the browser's native
+    fetch API) want.
+    """
+    if _wants_data_url():
+        if filename is None:
+            filename = path.name
+        return _ok(
+            {
+                "image": _image_data_url(path, content_type=content_type),
+                "filename": filename,
+                "content_type": content_type,
+                "size": path.stat().st_size if path.exists() else 0,
+            }
+        )
+    return file_response(
+        str(path),
+        filename=filename if filename is not None else path.name,
+        content_type=content_type,
+    )
 
 
 class AvatarRotatorPlugin(Star):
@@ -166,25 +229,25 @@ class AvatarRotatorPlugin(Star):
                 "Upload a new avatar image",
             ),
             (
-                f"/{PLUGIN_NAME}/avatars/<key>/image",
+                f"/{PLUGIN_NAME}/avatars/<key:path>/image",
                 self._webui_get_avatar_image,
                 ["GET"],
                 "Fetch the original bytes of an avatar",
             ),
             (
-                f"/{PLUGIN_NAME}/avatars/<key>/crop",
+                f"/{PLUGIN_NAME}/avatars/<key:path>/crop",
                 self._webui_set_or_clear_crop,
                 ["POST"],
                 "Set or clear crop metadata; payload {x,y,w,h} sets, empty clears",
             ),
             (
-                f"/{PLUGIN_NAME}/avatars/<key>/delete",
+                f"/{PLUGIN_NAME}/avatars/<key:path>/delete",
                 self._webui_delete_avatar,
                 ["POST"],
                 "Delete an avatar from the library",
             ),
             (
-                f"/{PLUGIN_NAME}/avatars/<key>/stripped",
+                f"/{PLUGIN_NAME}/avatars/<key:path>/stripped",
                 self._webui_download_stripped,
                 ["GET"],
                 "Download the cropped preview of an avatar",
@@ -681,20 +744,24 @@ class AvatarRotatorPlugin(Star):
         return None
 
     def _webui_get_avatar_image(self, key: str) -> Any:
-        """Return the original avatar bytes for the cropper preview."""
+        """Return the original avatar bytes for the cropper preview.
+
+        By default this returns a Starlette ``FileResponse`` (binary JPEG).
+        Pass ``?format=data_url`` to receive a JSON envelope ``{"image":
+        "data:image/jpeg;base64,..."}`` instead, which the WebUI page can
+        assign directly to ``<img src>`` — the iframe's ``bridge.apiGet``
+        postMessage proxy cannot return binary payloads to the page.
+        """
         path = self._resolve_avatar_by_key(key)
         if path is None:
             return _err("avatar not found", status_code=404)
         try:
+            # read_bytes validates the file is readable before we hand it off.
             path.read_bytes()
         except OSError as exc:
             return _err(f"failed to read avatar: {exc}", status_code=500)
 
-        return file_response(
-            str(path),
-            filename=path.name,
-            content_type="image/jpeg",
-        )
+        return _maybe_image_response(path, content_type="image/jpeg")
 
     async def _webui_set_or_clear_crop(self, key: str) -> Any:
         """Persist the crop rectangle or clear it depending on the payload.
@@ -830,17 +897,19 @@ class AvatarRotatorPlugin(Star):
         )
 
     def _webui_download_stripped(self, key: str) -> Any:
-        """Return the cropped PNG used for one avatar (or the original)."""
+        """Return the cropped JPEG used for one avatar (or the original).
+
+        Same response shape switch as ``_webui_get_avatar_image``: by default
+        a binary ``FileResponse``; ``?format=data_url`` returns a
+        ``{"image": "data:image/jpeg;base64,..."}`` envelope so the WebUI page
+        can render the cropped preview through ``bridge.apiGet``.
+        """
         path = self._resolve_avatar_by_key(key)
         if path is None:
             return _err("avatar not found", status_code=404)
         crop = self.crops.get(key)
         if not crop:
-            return file_response(
-                str(path),
-                filename=path.name,
-                content_type="image/jpeg",
-            )
+            return _maybe_image_response(path, content_type="image/jpeg")
         digest = hashlib.sha256(
             f"{path.resolve()}::{json.dumps(crop, sort_keys=True)}".encode("utf-8")
         ).hexdigest()[:12]
@@ -855,10 +924,10 @@ class AvatarRotatorPlugin(Star):
             except Exception as exc:
                 return _err(f"failed to crop: {exc}", status_code=500)
 
-        return file_response(
-            str(target),
-            filename=f"cropped_{path.stem}.jpg",
+        return _maybe_image_response(
+            target,
             content_type="image/jpeg",
+            filename=f"cropped_{path.stem}.jpg",
         )
 
     def _cleanup_stale_crop_cache(self) -> None:

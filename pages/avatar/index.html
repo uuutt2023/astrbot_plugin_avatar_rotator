@@ -29,16 +29,29 @@
         --shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
       }
       * { box-sizing: border-box; }
-      html, body { margin: 0; padding: 0; background: var(--bg); color: var(--text); font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "PingFang SC", sans-serif; }
+      html, body {
+        margin: 0; padding: 0;
+        background: var(--bg); color: var(--text);
+        font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "PingFang SC", sans-serif;
+      }
       .wrap { padding: 16px; max-width: 1200px; margin: 0 auto; }
       h1 { margin: 0 0 4px; font-size: 20px; }
       .muted { color: var(--text-muted); font-size: 12px; }
       .row { display: flex; gap: 16px; flex-wrap: wrap; }
-      .card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 16px; box-shadow: var(--shadow); }
+      .card {
+        background: var(--surface); border: 1px solid var(--border);
+        border-radius: 8px; padding: 16px; box-shadow: var(--shadow);
+      }
       .upload-card { flex: 1 1 320px; min-width: 320px; }
       .library-card { flex: 2 1 600px; min-width: 320px; }
-      .drop { border: 2px dashed var(--border); border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; transition: background 0.15s; }
-      .drop:hover, .drop.dragover { background: var(--surface); border-color: var(--primary); }
+      .drop {
+        border: 2px dashed var(--border); border-radius: 8px;
+        padding: 24px; text-align: center; cursor: pointer;
+        transition: background 0.15s;
+      }
+      .drop:hover, .drop.dragover {
+        background: var(--surface); border-color: var(--primary);
+      }
       .drop input { display: none; }
       button {
         background: var(--primary); color: var(--primary-text); border: 0;
@@ -48,409 +61,126 @@
       button.secondary { background: transparent; color: var(--text); border: 1px solid var(--border); }
       button.danger { background: var(--danger); color: #fff; }
       button:disabled { opacity: 0.5; cursor: not-allowed; }
-      .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-top: 12px; }
-      .item { background: var(--bg); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; display: flex; flex-direction: column; }
-      .item img { width: 100%; aspect-ratio: 1; object-fit: cover; background: var(--surface); cursor: pointer; }
+      .virtual-grid-wrap {
+        margin-top: 12px;
+        /* react-window's FixedSizeList positions each row absolutely with
+           top/height set inline; the parent just needs an explicit height
+           so the list has somewhere to scroll. JS sets the height. */
+        width: 100%;
+        border-radius: 6px;
+      }
+      .virtual-row {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+        gap: 12px;
+        padding: 0 2px;
+      }
+      .item {
+        background: var(--bg); border: 1px solid var(--border);
+        border-radius: 6px; overflow: hidden;
+        display: flex; flex-direction: column;
+      }
+      .item img {
+        width: 100%; aspect-ratio: 1;
+        object-fit: cover; background: var(--surface);
+        cursor: pointer; display: block;
+      }
       .item-body { padding: 8px; font-size: 12px; }
       .item-body .name { font-weight: 500; word-break: break-all; }
       .item-body .meta { color: var(--text-muted); margin-top: 4px; }
-      .item-actions { display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap; }
+      .item-actions {
+        display: flex; gap: 4px; margin-top: 8px; flex-wrap: wrap;
+      }
       .item-actions button { padding: 4px 8px; font-size: 11px; flex: 1 1 auto; }
-      .badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; background: var(--primary); color: var(--primary-text); margin-right: 4px; }
+      .badge {
+        display: inline-block; padding: 1px 6px; border-radius: 3px;
+        font-size: 10px; background: var(--primary);
+        color: var(--primary-text); margin-right: 4px;
+      }
       .badge.crop { background: var(--success); }
       .badge.source { background: var(--text-muted); }
 
-      .modal-mask { position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
-      .modal { background: var(--bg); border-radius: 8px; padding: 16px; max-width: 90vw; max-height: 90vh; overflow: auto; box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3); }
+      .modal-mask {
+        position: fixed; inset: 0; background: rgba(0, 0, 0, 0.6);
+        display: flex; align-items: center; justify-content: center;
+        z-index: 100;
+      }
+      .modal {
+        background: var(--bg); border-radius: 8px; padding: 16px;
+        max-width: 90vw; max-height: 90vh; overflow: auto;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      }
       .modal h2 { margin: 0 0 12px; font-size: 16px; }
-      .stage { position: relative; max-width: 600px; max-height: 60vh; margin: 0 auto; user-select: none; }
+      .stage {
+        position: relative; max-width: 600px; max-height: 60vh;
+        margin: 0 auto; user-select: none;
+      }
       .stage canvas { display: block; max-width: 100%; max-height: 60vh; }
-      .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+      .modal-actions {
+        display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px;
+      }
       .hint { font-size: 12px; color: var(--text-muted); margin-top: 8px; }
-      .toast { position: fixed; bottom: 24px; right: 24px; padding: 10px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: var(--shadow); z-index: 200; opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+      .toast {
+        position: fixed; bottom: 24px; right: 24px;
+        padding: 10px 16px; background: var(--surface);
+        border: 1px solid var(--border); border-radius: 6px;
+        box-shadow: var(--shadow); z-index: 200;
+        opacity: 0; transition: opacity 0.2s; pointer-events: none;
+      }
       .toast.show { opacity: 1; }
       .toast.error { border-color: var(--danger); color: var(--danger); }
       .toast.success { border-color: var(--success); color: var(--success); }
-      .stats { display: flex; gap: 16px; margin-top: 8px; flex-wrap: wrap; }
-      .stats span { background: var(--surface); padding: 4px 10px; border-radius: 4px; font-size: 12px; }
+      .stats {
+        display: flex; gap: 16px; margin-top: 8px; flex-wrap: wrap;
+      }
+      .stats span {
+        background: var(--surface); padding: 4px 10px;
+        border-radius: 4px; font-size: 12px;
+      }
+      .virtual-scroll-info {
+        margin-top: 8px;
+        color: var(--text-muted);
+        font-size: 12px;
+      }
     </style>
   </head>
   <body>
-    <div class="wrap">
-      <h1>头像库管理</h1>
-      <div class="muted" id="subtitle">加载中...</div>
-      <div class="stats" id="stats"></div>
+    <div id="root"></div>
 
-      <div class="row" style="margin-top: 16px;">
-        <div class="card upload-card">
-          <h2 style="margin: 0 0 12px; font-size: 16px;">上传新头像</h2>
-          <label class="drop" id="drop">
-            <input type="file" id="file-input" accept="image/*" multiple />
-            <div>点击或拖拽图片到这里上传</div>
-            <div class="muted">支持 JPG / PNG / WebP / BMP,可一次选择多张</div>
-          </label>
-          <div class="hint" id="upload-status"></div>
-          <div style="margin-top: 12px; display: flex; gap: 8px;">
-            <button class="secondary" id="rotate-now">立即换头像</button>
-          </div>
-        </div>
-
-        <div class="card library-card">
-          <h2 style="margin: 0 0 4px; font-size: 16px;">图库 <span class="muted" id="library-count">(0)</span></h2>
-          <div class="muted">点击缩略图可裁切 (1:1),裁切后下次轮换会按此区域生效</div>
-          <div class="grid" id="grid"></div>
-        </div>
-      </div>
-    </div>
-
-    <div id="modal-root"></div>
-    <div id="toast" class="toast"></div>
-
+    <!--
+      Vendor scripts (React + ReactDOM + Babel standalone). AstrBot's
+      PluginPageService auto-rewrites relative <script src> paths in this
+      HTML to authenticated /api/plugin/page/content/<plugin>/avatar/...?
+      asset_token=... URLs, so these files ship from the plugin's
+      pages/avatar/ directory with no cross-origin or CORS concerns.
+    -->
+    <script src="./react.production.min.js"></script>
+    <script src="./react-dom.production.min.js"></script>
+    <script src="./babel.min.js"></script>
+    <script src="./react-window.iife.js"></script>
     <script src="/api/plugin/page/bridge-sdk.js"></script>
-    <script>
-      // === Bridge helper with status hooks ===================================
-      const bridge = window.AstrBotPluginPage;
-      const $ = (id) => document.getElementById(id);
-      const modalRoot = $("modal-root");
-      const toast = $("toast");
 
-      function showToast(message, type = "success") {
-        toast.textContent = message;
-        toast.className = "toast show " + type;
-        clearTimeout(showToast._timer);
-        showToast._timer = setTimeout(() => {
-          toast.className = "toast " + type;
-        }, 2200);
+    <script type="text/babel" data-presets="react">
+      const { useState, useEffect, useRef, useMemo, useCallback, memo } = React;
+      const bridge = window.AstrBotPluginPage;
+
+      // === Shared helpers ====================================================
+      // encodeKeyForPath splits the avatar key on '/' and encodes each segment
+      // individually so the literal '/' separators stay as path delimiters in
+      // the request, rather than becoming "%2F" (which the dashboard parent's
+      // normalizePluginEndpoint would then re-encode to "%252F", losing the
+      // path structure).
+      function encodeKeyForPath(key) {
+        return String(key || "")
+          .split("/")
+          .map((segment) => encodeURIComponent(segment))
+          .join("/");
       }
 
       function fmtBytes(n) {
         if (n < 1024) return n + " B";
         if (n < 1024 * 1024) return (n / 1024).toFixed(1) + " KB";
         return (n / 1024 / 1024).toFixed(2) + " MB";
-      }
-
-      // === Application state =================================================
-      let library = [];
-      let schedulerState = null;
-      let cropTarget = null; // { key, name, image, srcW, srcH, crop: {x,y,w,h} | null }
-
-      function renderStats() {
-        const counts = { total: library.length, qq: 0, webui: 0, cropped: 0 };
-        for (const item of library) {
-          if (item.source === "qq") counts.qq++;
-          else if (item.source === "webui") counts.webui++;
-          if (item.has_crop) counts.cropped++;
-        }
-        $("stats").innerHTML = [
-          `<span>总数 ${counts.total}</span>`,
-          `<span>QQ 上传 ${counts.qq}</span>`,
-          `<span>WebUI 上传 ${counts.webui}</span>`,
-          `<span>已裁切 ${counts.cropped}</span>`,
-        ].join("");
-        $("library-count").textContent = `(${counts.total})`;
-      }
-
-      function renderGrid() {
-        const grid = $("grid");
-        if (!library.length) {
-          grid.innerHTML = `<div class="muted" style="grid-column: 1 / -1; padding: 24px; text-align: center;">图库为空,通过左边的上传框或 QQ 指令 / 添加轮换头像 添加头像</div>`;
-          return;
-        }
-        grid.innerHTML = library.map((item) => `
-          <div class="item" data-key="${item.key}">
-            <img data-key="${item.key}" alt="${item.name}" />
-            <div class="item-body">
-              <div class="name">${item.name}</div>
-              <div class="meta">
-                ${item.width}x${item.height} · ${fmtBytes(item.size)}
-                <br/>
-                <span class="badge source">${item.source}</span>
-                ${item.has_crop ? '<span class="badge crop">已裁切</span>' : '<span class="badge">未裁切</span>'}
-              </div>
-              <div class="item-actions">
-                <button class="crop-btn" data-key="${item.key}">${item.has_crop ? "改裁切" : "裁切"}</button>
-                <button class="clear-crop-btn secondary" data-key="${item.key}" ${item.has_crop ? "" : "disabled"}>清除</button>
-                <button class="delete-btn danger" data-key="${item.key}">删除</button>
-              </div>
-            </div>
-          </div>
-        `).join("");
-        // Load thumbnails via the image endpoint
-        for (const item of library) {
-          const img = grid.querySelector(`img[data-key="${item.key}"]`);
-          if (img) {
-            bridge.apiGet(`avatars/${encodeURIComponent(item.key)}/image`).then((res) => {
-              // The image endpoint returns a file response; the bridge auto-resolves,
-              // but we need the raw URL. Use the public upload endpoint instead.
-              img.src = `../api/v1/plugins/extensions/astrbot_plugin_avatar_rotator/avatars/${encodeURIComponent(item.key)}/image`;
-            }).catch(() => {
-              img.alt = "加载失败";
-            });
-          }
-        }
-        grid.querySelectorAll(".crop-btn").forEach((btn) => {
-          btn.onclick = (e) => openCropModal(e.currentTarget.dataset.key);
-        });
-        grid.querySelectorAll(".clear-crop-btn").forEach((btn) => {
-          btn.onclick = (e) => clearCrop(e.currentTarget.dataset.key);
-        });
-        grid.querySelectorAll(".delete-btn").forEach((btn) => {
-          btn.onclick = (e) => deleteAvatar(e.currentTarget.dataset.key);
-        });
-      }
-
-      async function refresh() {
-        try {
-          const res = await bridge.apiGet("avatars");
-          library = res.avatars || [];
-          schedulerState = res.state || null;
-          if (schedulerState) {
-            const last = schedulerState.last_avatar
-              ? new Date(schedulerState.last_changed_at * 1000).toLocaleString()
-              : "尚未更换";
-            const next = schedulerState.next_run_at
-              ? new Date(schedulerState.next_run_at * 1000).toLocaleString()
-              : "尚未安排";
-            $("subtitle").textContent = `上次更换: ${last} · 下次计划: ${next} · ${schedulerState.paused ? "已暂停" : "运行中"}`;
-          }
-          renderStats();
-          renderGrid();
-        } catch (err) {
-          showToast("加载失败: " + err.message, "error");
-        }
-      }
-
-      // === Upload ============================================================
-      async function uploadFiles(fileList) {
-        if (!fileList || !fileList.length) return;
-        let ok = 0, fail = 0;
-        for (const file of fileList) {
-          $("upload-status").textContent = `上传中: ${file.name} ...`;
-          try {
-            await bridge.upload("avatars/upload", file);
-            ok++;
-          } catch (err) {
-            fail++;
-            showToast(`上传 ${file.name} 失败: ${err.message}`, "error");
-          }
-        }
-        $("upload-status").textContent = `本次上传 ${ok} 张,失败 ${fail} 张`;
-        setTimeout(() => { $("upload-status").textContent = ""; }, 3000);
-        await refresh();
-      }
-
-      const drop = $("drop");
-      const fileInput = $("file-input");
-      drop.addEventListener("click", () => fileInput.click());
-      fileInput.addEventListener("change", (e) => {
-        uploadFiles(e.target.files);
-        fileInput.value = "";
-      });
-      ["dragenter", "dragover"].forEach((evt) => {
-        drop.addEventListener(evt, (e) => {
-          e.preventDefault();
-          drop.classList.add("dragover");
-        });
-      });
-      ["dragleave", "drop"].forEach((evt) => {
-        drop.addEventListener(evt, (e) => {
-          e.preventDefault();
-          drop.classList.remove("dragover");
-        });
-      });
-      drop.addEventListener("drop", (e) => {
-        if (e.dataTransfer && e.dataTransfer.files) {
-          uploadFiles(e.dataTransfer.files);
-        }
-      });
-
-      // === Manual rotate =====================================================
-      $("rotate-now").onclick = async () => {
-        try {
-          const r = await bridge.apiPost("rotate", {});
-          showToast("已更换: " + (r.rotated || ""), "success");
-          await refresh();
-        } catch (err) {
-          showToast("更换失败: " + err.message, "error");
-        }
-      };
-
-      // === Delete avatar ====================================================
-      async function deleteAvatar(key) {
-        const item = library.find((i) => i.key === key);
-        if (!item) return;
-        if (!confirm(`确定删除 ${item.name} ?`)) return;
-        try {
-          await bridge.apiPost(`avatars/${encodeURIComponent(key)}/delete`, {});
-          showToast("已删除", "success");
-          await refresh();
-        } catch (err) {
-          showToast("删除失败: " + err.message, "error");
-        }
-      }
-
-      // === Clear crop =======================================================
-      async function clearCrop(key) {
-        try {
-          await bridge.apiPost(`avatars/${encodeURIComponent(key)}/crop`, {});
-          showToast("已清除裁切", "success");
-          await refresh();
-        } catch (err) {
-          showToast("清除失败: " + err.message, "error");
-        }
-      }
-
-      // === Crop modal =======================================================
-      // 1:1 aspect crop overlay. Mouse + drag to select. Snaps to a square.
-      function openCropModal(key) {
-        const item = library.find((i) => i.key === key);
-        if (!item) return;
-        const image = new Image();
-        image.crossOrigin = "anonymous";
-        image.onload = () => {
-          cropTarget = {
-            key,
-            name: item.name,
-            image,
-            srcW: item.width,
-            srcH: item.height,
-            crop: item.crop ? { ...item.crop } : null,
-          };
-          showCropModal();
-        };
-        image.onerror = () => showToast("加载图片失败", "error");
-        image.src = `../api/v1/plugins/extensions/astrbot_plugin_avatar_rotator/avatars/${encodeURIComponent(key)}/image`;
-      }
-
-      function showCropModal() {
-        const t = cropTarget;
-        const target = t.crop
-          ? t.crop
-          : defaultSquare(t.image.naturalWidth, t.image.naturalHeight);
-        const modal = document.createElement("div");
-        modal.className = "modal-mask";
-        modal.innerHTML = `
-          <div class="modal" role="dialog">
-            <h2>裁切 ${t.name}</h2>
-            <div class="muted">原图 ${t.srcW}x${t.srcH},拖拽框选 1:1 裁切区域</div>
-            <div class="stage" id="stage"></div>
-            <div class="hint">裁切数据保存在 crops.json,下次轮换时按此区域裁切后上传</div>
-            <div class="modal-actions">
-              <button class="secondary" id="reset">重置</button>
-              <button class="danger" id="cancel">取消</button>
-              <button id="save">保存</button>
-            </div>
-          </div>
-        `;
-        modalRoot.replaceChildren(modal);
-        const stage = $("stage");
-        const canvas = document.createElement("canvas");
-        stage.appendChild(canvas);
-        const ctx = canvas.getContext("2d");
-        const dispW = Math.min(t.image.naturalWidth, 600);
-        const scale = dispW / t.image.naturalWidth;
-        const dispH = t.image.naturalHeight * scale;
-        canvas.width = dispW;
-        canvas.height = dispH;
-        canvas.style.width = dispW + "px";
-        canvas.style.height = dispH + "px";
-
-        const rect = {
-          x: target.x * scale,
-          y: target.y * scale,
-          size: Math.min(target.w, target.h) * scale,
-        };
-        let dragging = null;
-
-        function draw() {
-          ctx.drawImage(t.image, 0, 0, dispW, dispH);
-          ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
-          ctx.fillRect(0, 0, dispW, dispH);
-          ctx.clearRect(rect.x, rect.y, rect.size, rect.size);
-          ctx.drawImage(
-            t.image,
-            rect.x / scale,
-            rect.y / scale,
-            rect.size / scale,
-            rect.size / scale,
-            rect.x,
-            rect.y,
-            rect.size,
-            rect.size,
-          );
-          ctx.strokeStyle = "#1e88e5";
-          ctx.lineWidth = 2;
-          ctx.strokeRect(rect.x, rect.y, rect.size, rect.size);
-        }
-        draw();
-
-        canvas.addEventListener("mousedown", (e) => {
-          const r = canvas.getBoundingClientRect();
-          const cx = e.clientX - r.left;
-          const cy = e.clientY - r.top;
-          if (cx >= rect.x && cx <= rect.x + rect.size && cy >= rect.y && cy <= rect.y + rect.size) {
-            dragging = { startX: cx, startY: cy, origX: rect.x, origY: rect.y };
-          } else {
-            const size = Math.min(120, Math.min(dispW, dispH) / 2);
-            rect.x = Math.max(0, Math.min(cx - size / 2, dispW - size));
-            rect.y = Math.max(0, Math.min(cy - size / 2, dispH - size));
-            rect.size = Math.min(rect.size, Math.min(dispW - rect.x, dispH - rect.y));
-            draw();
-          }
-        });
-        canvas.addEventListener("mousemove", (e) => {
-          if (!dragging) return;
-          const r = canvas.getBoundingClientRect();
-          const cx = e.clientX - r.left;
-          const cy = e.clientY - r.top;
-          rect.x = Math.max(0, Math.min(dispW - rect.size, dragging.origX + (cx - dragging.startX)));
-          rect.y = Math.max(0, Math.min(dispH - rect.size, dragging.origY + (cy - dragging.startY)));
-          draw();
-        });
-        ["mouseup", "mouseleave"].forEach((evt) =>
-          canvas.addEventListener(evt, () => { dragging = null; }),
-        );
-
-        // Touch support
-        canvas.addEventListener("touchstart", (e) => {
-          const t0 = e.touches[0];
-          canvas.dispatchEvent(new MouseEvent("mousedown", { clientX: t0.clientX, clientY: t0.clientY }));
-          e.preventDefault();
-        });
-        canvas.addEventListener("touchmove", (e) => {
-          const t0 = e.touches[0];
-          canvas.dispatchEvent(new MouseEvent("mousemove", { clientX: t0.clientX, clientY: t0.clientY }));
-          e.preventDefault();
-        });
-        canvas.addEventListener("touchend", () => {
-          canvas.dispatchEvent(new MouseEvent("mouseup"));
-        });
-
-        $("cancel").onclick = () => modal.remove();
-        $("reset").onclick = () => {
-          const def = defaultSquare(t.image.naturalWidth, t.image.naturalHeight);
-          rect.x = def.x * scale;
-          rect.y = def.y * scale;
-          rect.size = Math.min(def.w, def.h) * scale;
-          draw();
-        };
-        $("save").onclick = async () => {
-          const payload = {
-            x: Math.round(rect.x / scale),
-            y: Math.round(rect.y / scale),
-            w: Math.round(rect.size / scale),
-            h: Math.round(rect.size / scale),
-            aspect: 1.0,
-          };
-          try {
-            await bridge.apiPost(`avatars/${encodeURIComponent(t.key)}/crop`, payload);
-            showToast("裁切已保存", "success");
-            modal.remove();
-            await refresh();
-          } catch (err) {
-            showToast("保存失败: " + err.message, "error");
-          }
-        };
       }
 
       function defaultSquare(w, h) {
@@ -463,13 +193,1258 @@
         };
       }
 
-      // === Boot ==============================================================
-      bridge.ready().then((ctx) => {
-        document.documentElement.setAttribute("data-theme", ctx.isDark ? "dark" : "light");
-        bridge.onContext((next) => {
-          document.documentElement.setAttribute("data-theme", next.isDark ? "dark" : "light");
+      function formatTimestamp(seconds) {
+        return new Date(seconds * 1000).toLocaleString();
+      }
+
+      // === Image data-URL cache ==============================================
+      // Avatar preview bytes come back as base64 data URLs from
+      // /image?format=data_url. Decoding the same JPEG over the postMessage
+      // bridge on every crop-save (which previously triggered a full grid
+      // re-render and refetched every thumbnail) is wasteful — base64 of a
+      // 500 KB image is ~670 KB and re-serialising through postMessage
+      // visibly stutters. We cache by the avatar key so opening the crop
+      // modal a second time, or refreshing the library while the modal is
+      // open, hits the cache.
+      //
+      // The cache is module-level (shared by all component instances) and
+      // exposes a small subscription API so AvatarCard can re-render only
+      // when its own entry transitions into "ready". It is also bounded by
+      // a soft size limit — a true LRU on read/write — so a library that
+      // grows to thousands of avatars cannot OOM the iframe. Entries are
+      // also capped at MAX_ENTRY_BYTES so a single huge base64 doesn't
+      // hog the budget on its own.
+      const IMAGE_CACHE_MAX_ENTRIES = 80;
+      const IMAGE_CACHE_MAX_ENTRY_BYTES = 8 * 1024 * 1024; // 8 MB
+      const imageCache = (() => {
+        const store = new Map();   // insertion order = recency
+        const listeners = new Map();
+
+        function touch(key) {
+          // Map.keys() preserves insertion order; re-set to bump to the
+          // most-recently-used position.
+          if (store.has(key)) {
+            const value = store.get(key);
+            store.delete(key);
+            store.set(key, value);
+          }
+        }
+
+        function evict() {
+          while (store.size > IMAGE_CACHE_MAX_ENTRIES) {
+            const oldestKey = store.keys().next().value;
+            if (oldestKey === undefined) break;
+            store.delete(oldestKey);
+            const set = listeners.get(oldestKey);
+            if (set) set.forEach((fn) => fn({ state: "evicted" }));
+          }
+        }
+
+        function subscribe(key, fn) {
+          let set = listeners.get(key);
+          if (!set) {
+            set = new Set();
+            listeners.set(key, set);
+          }
+          set.add(fn);
+          return () => set.delete(fn);
+        }
+
+        function notify(key, payload) {
+          const set = listeners.get(key);
+          if (set) set.forEach((fn) => fn(payload));
+        }
+
+        async function load(key, fetcher) {
+          const existing = store.get(key);
+          if (existing && (existing.state === "ready" || existing.state === "error")) {
+            touch(key);
+            return existing;
+          }
+          store.set(key, { state: "pending" });
+          notify(key, { state: "pending" });
+          try {
+            const dataUrl = await fetcher();
+            if (dataUrl && dataUrl.length > IMAGE_CACHE_MAX_ENTRY_BYTES) {
+              // Single oversized entry — cache it but don't let it crowd
+              // out smaller neighbours; evict everything else first.
+              store.clear();
+              const set = listeners.get("__purge__");
+              // Tell existing subscribers to drop their src refs.
+              listeners.forEach((set) => set.forEach((fn) => fn({ state: "evicted" })));
+            }
+            const entry = { state: "ready", dataUrl };
+            store.set(key, entry);
+            touch(key);
+            evict();
+            notify(key, entry);
+            return entry;
+          } catch (err) {
+            const entry = { state: "error", error: err };
+            store.set(key, entry);
+            notify(key, entry);
+            return entry;
+          }
+        }
+
+        function getEntry(key) {
+          const entry = store.get(key);
+          if (entry && entry.state === "ready") touch(key);
+          return entry;
+        }
+        function invalidate(key) {
+          store.delete(key);
+        }
+        function clear() {
+          store.clear();
+          listeners.forEach((set) => set.forEach((fn) => fn({ state: "evicted" })));
+        }
+        function size() { return store.size; }
+
+        return { getEntry, subscribe, load, invalidate, clear, size };
+      })();
+
+      async function fetchAvatarDataUrl(key) {
+        const endpoint = `avatars/${encodeKeyForPath(key)}/image`;
+        const res = await bridge.apiGet(endpoint, { format: "data_url" });
+        if (!res || typeof res.image !== "string") {
+          throw new Error("empty image response");
+        }
+        return res.image;
+      }
+
+      // === Toast (singleton, imperative API) =================================
+      function useToast() {
+        const [toast, setToast] = useState(null);
+        const timerRef = useRef(null);
+        const show = useCallback((message, type = "success") => {
+          if (timerRef.current) clearTimeout(timerRef.current);
+          setToast({ message, type });
+          timerRef.current = setTimeout(() => setToast(null), 2200);
+        }, []);
+        useEffect(() => () => {
+          if (timerRef.current) clearTimeout(timerRef.current);
+        }, []);
+        const view = toast
+          ? <div className={"toast show " + toast.type}>{toast.message}</div>
+          : <div className="toast"></div>;
+        return { show, view };
+      }
+
+      // === AvatarCard ========================================================
+      // One card per avatar in the library grid. Memoised on the `actions`
+      // prop identity so unchanged cards skip re-render entirely when a
+      // sibling's crop is saved. The image data URL is fetched once per key
+      // via imageCache and re-rendered only when the cache entry for *this*
+      // key transitions to ready — saving a crop elsewhere in the grid does
+      // NOT refetch this card's image.
+      // A single shared IntersectionObserver instance for the whole page. Cards
+      // observe their <img> wrapper and trigger an image fetch only when
+      // it scrolls within ~600 px of the viewport. One observer handles all
+      // cards (lazy + virtualisation together drop the active DOM count
+      // to ~20–40 entries anyway, but the observer lets us also skip
+      // fetching base64 for any card that the user never scrolls near).
+      const lazyObserver = (() => {
+        if (typeof IntersectionObserver === "undefined") return null;
+        const observer = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            const onVisible = entry.target.__onVisible;
+            if (typeof onVisible === "function") {
+              entry.target.__onVisible();
+              // Stop watching once we've kicked off the load; the cache
+              // subscriber handles the rest of the lifecycle.
+              observer.unobserve(entry.target);
+              entry.target.__onVisible = null;
+            }
+          }
+        }, {
+          // Start loading a bit before the card is actually visible so the
+          // user never sees a placeholder on a slow network.
+          rootMargin: "600px 0px",
+          threshold: 0.01,
         });
-        refresh();
+        return observer;
+      })();
+
+      const AvatarCard = memo(function AvatarCard({ item, actions }) {
+        const [, force] = useState(0);
+        const wrapperRef = useRef(null);
+        const inViewportRef = useRef(false);
+
+        useEffect(() => {
+          const unsub = imageCache.subscribe(item.key, (entry) => {
+            // entry may be undefined on the evicted notification. Re-fire
+            // a load only if the card is already in (or near) the
+            // viewport — IntersectionObserver handles the cold path.
+            force((n) => n + 1);
+            if (!entry || entry.state === "evicted") {
+              if (inViewportRef.current) {
+                imageCache.load(item.key, () => fetchAvatarDataUrl(item.key));
+              }
+            }
+          });
+          const wrapper = wrapperRef.current;
+          // Subscribe to visibility via IntersectionObserver; if the
+          // observer isn't available, fall back to an immediate load.
+          if (lazyObserver && wrapper) {
+            wrapper.__onVisible = () => {
+              inViewportRef.current = true;
+              const entry = imageCache.getEntry(item.key);
+              if (!entry || entry.state === "pending") {
+                imageCache.load(item.key, () => fetchAvatarDataUrl(item.key));
+              }
+            };
+            lazyObserver.observe(wrapper);
+          } else {
+            inViewportRef.current = true;
+            const entry = imageCache.getEntry(item.key);
+            if (!entry || entry.state === "pending") {
+              imageCache.load(item.key, () => fetchAvatarDataUrl(item.key));
+            }
+          }
+          return () => {
+            unsub();
+            if (lazyObserver && wrapper) {
+              try { lazyObserver.unobserve(wrapper); } catch (_) {}
+              wrapper.__onVisible = null;
+            }
+          };
+        }, [item.key]);
+
+        const entry = imageCache.getEntry(item.key);
+        // Even before the image is fetched, we still want to render the
+        // card chrome (so virtualization can measure the row). The <img>
+        // shows a placeholder background until a real data URL is ready.
+        const src = entry && entry.state === "ready" ? entry.dataUrl : null;
+        const failed = entry && entry.state === "error";
+
+        return (
+          <div className="item" data-key={item.key} ref={wrapperRef}>
+            <img
+              data-key={item.key}
+              alt={item.name}
+              src={src || ""}
+              onClick={() => actions.onCrop(item.key)}
+              onError={() => {
+                if (!failed) {
+                  imageCache.invalidate(item.key);
+                  imageCache.load(item.key, () => fetchAvatarDataUrl(item.key));
+                }
+              }}
+            />
+            <div className="item-body">
+              <div className="name">{item.name}</div>
+              <div className="meta">
+                {item.width}x{item.height} · {fmtBytes(item.size)}
+                <br />
+                <span className="badge source">{item.source}</span>
+                {item.has_crop
+                  ? <span className="badge crop">已裁切</span>
+                  : <span className="badge">未裁切</span>}
+              </div>
+              <div className="item-actions">
+                <button
+                  className="crop-btn"
+                  onClick={() => actions.onCrop(item.key)}
+                >
+                  {item.has_crop ? "改裁切" : "裁切"}
+                </button>
+                <button
+                  className="clear-crop-btn secondary"
+                  disabled={!item.has_crop}
+                  onClick={() => actions.onClearCrop(item.key)}
+                >
+                  清除
+                </button>
+                <button
+                  className="delete-btn danger"
+                  onClick={() => actions.onDelete(item.key)}
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      });
+
+      // === ConfirmDialog ======================================================
+      // window.confirm() is blocked inside the dashboard iframe because the
+      // sandbox attribute omits "allow-modals". This self-hosted confirm
+      // dialog returns a Promise<boolean> so call sites can `await` it.
+      function confirmDialog({ message, confirmLabel = "确定", cancelLabel = "取消", danger = false }) {
+        return new Promise((resolve) => {
+          const onResolve = (result) => {
+            window.removeEventListener("keydown", onKey);
+            resolve(result);
+          };
+          const onKey = (e) => {
+            if (e.key === "Escape") onResolve(false);
+            else if (e.key === "Enter") onResolve(true);
+          };
+          window.addEventListener("keydown", onKey);
+          // Render via a React portal-like minimal mount: append a div to
+          // body and unmount it from the resolver.
+          const host = document.createElement("div");
+          document.body.appendChild(host);
+          const root = ReactDOM.createRoot(host);
+          const close = (result) => {
+            root.unmount();
+            document.body.removeChild(host);
+            onResolve(result);
+          };
+          root.render(
+            <div
+              className="modal-mask"
+              onClick={(e) => {
+                if (e.target.classList.contains("modal-mask")) close(false);
+              }}
+            >
+              <div className="modal" role="dialog" style={{ maxWidth: "420px" }}>
+                <div style={{ margin: "0 0 16px", fontSize: "14px" }}>{message}</div>
+                <div className="modal-actions">
+                  <button className="secondary" onClick={() => close(false)}>
+                    {cancelLabel}
+                  </button>
+                  <button
+                    className={danger ? "danger" : ""}
+                    onClick={() => close(true)}
+                    autoFocus
+                  >
+                    {confirmLabel}
+                  </button>
+                </div>
+              </div>
+            </div>
+          );
+        });
+      }
+
+      // === CropModal =========================================================
+      // Loads the original (uncropped) image into a canvas, lets the user
+      // drag a 1:1 selection, then POSTs the selection to /crop. The image
+      // is loaded from the cache that AvatarCard populated, so opening the
+      // modal on an already-visible avatar costs zero network round-trips.
+      //
+      // Interaction model:
+      // - Mouse drag on the canvas: move the crop rectangle.
+      // - Click outside the rectangle: drop a fresh default-sized square
+      //   centred on the click point.
+      // - Wheel: zoom in/out around the cursor position.
+      // - Middle-button drag (or any drag starting outside the rectangle
+      //   while holding Shift): pan the image.
+      //
+      // The image is drawn at the highest zoom that fits the modal's stage
+      // height; the user can zoom out to see the whole image and zoom in
+      // for precise crop edges.
+      function CropModal({ item, onClose, onSaved, toast }) {
+        const canvasRef = useRef(null);
+        const containerRef = useRef(null);
+        // All canvas state lives in a ref so drag/wheel/zoom never triggers
+        // a React re-render. The single render-driving flag is `ready` /
+        // `failed` for the loading UI; once ready flips true the canvas
+        // has been painted and event handlers carry the rest.
+        const stateRef = useRef({
+          image: null,
+          // Stage layout (container) — measured once on mount + on resize.
+          stageW: 600,
+          stageH: 400,
+          // Displayed canvas size — derived from stage and zoom.
+          dispW: 0,
+          dispH: 0,
+          // Ratio of displayed size to the source image pixels.
+          scale: 1,
+          // Pan offset of the displayed image within the stage (CSS px).
+          panX: 0,
+          panY: 0,
+          // Multiplicative zoom (1.0 = fit-to-stage; user can go below 1 by
+          // zooming out, or above 1 for a close-up).
+          zoom: 1,
+          // Crop selection rectangle in canvas (displayed) coordinates.
+          rect: null,
+          // Active drag: { kind: 'rect' | 'pan', startX, startY, origX,
+          // origY, origPanX, origPanY }
+          dragging: null,
+          // Bound canvas render function — kept on the ref so the image
+          // onload handler (registered outside React's lifecycle) can
+          // paint the first frame.
+          draw: () => {},
+        });
+        const [ready, setReady] = useState(false);
+        const [failed, setFailed] = useState(false);
+        const [saving, setSaving] = useState(false);
+
+        // One combined effect: load the image, size the canvas to the
+        // stage container, and bind input handlers. Drawing is driven by
+        // stateRef — no setState calls during drag/wheel/zoom.
+        useEffect(() => {
+          const canvas = canvasRef.current;
+          const container = containerRef.current;
+          if (!canvas || !container) return undefined;
+          const ctx = canvas.getContext("2d");
+          const s = stateRef.current;
+
+          // Measure the stage container. We re-measure on window resize so the
+          // canvas always fits the available modal area. The canvas is
+          // sized to the stage in *both* pixel and CSS dimensions; the
+          // image is drawn inside the stage by translate + scale, so all
+          // event coordinates and crop-rect coordinates share the same
+          // (0, 0) to (stageW, stageH) canvas space.
+          //
+          // NOTE: we measure once *and once again on the next animation
+          // frame*. The synchronous call inside useEffect can see a
+          // pre-layout container (e.g. when the modal just opened the
+          // flex centering hasn't been resolved yet), which would set
+          // stageW/H to zero and leave the canvas invisible. The rAF
+          // callback runs after the first style + layout flush.
+          const measure = () => {
+            const rect = container.getBoundingClientRect();
+            s.stageW = Math.max(200, rect.width);
+            s.stageH = Math.max(200, rect.height);
+          };
+          measure();
+          const sizeCanvas = () => {
+            canvas.width = Math.round(s.stageW);
+            canvas.height = Math.round(s.stageH);
+            canvas.style.width = s.stageW + "px";
+            canvas.style.height = s.stageH + "px";
+          };
+          sizeCanvas();
+          const onResize = () => {
+            measure();
+            sizeCanvas();
+            layout();
+            s.draw();
+          };
+          window.addEventListener("resize", onResize);
+
+          // The synchronous measure() above can run before the modal has
+          // been laid out by the browser (flex/grid containers report
+          // zero-size until first paint). Re-measure on the next
+          // animation frame once the browser has computed layout, and
+          // whenever the stage itself resizes.
+          const ro = new ResizeObserver(() => {
+            const prevW = s.stageW;
+            const prevH = s.stageH;
+            measure();
+            if (prevW === s.stageW && prevH === s.stageH) return;
+            sizeCanvas();
+            layout();
+            if (s.rect) clampRect(s.rect);
+            s.draw();
+          });
+          ro.observe(container);
+          const raf = requestAnimationFrame(() => {
+            if (cancelled) return;
+            const prevW = s.stageW;
+            const prevH = s.stageH;
+            measure();
+            if (prevW === s.stageW && prevH === s.stageH) return;
+            sizeCanvas();
+            layout();
+            if (s.rect) clampRect(s.rect);
+            s.draw();
+          });
+
+          // Recompute the fit-to-stage base scale, the current effective
+          // scale, and re-centre the image within the stage. Pure
+          // arithmetic — does not touch the canvas backing store or DOM
+          // attributes beyond recomputing the rect.
+          const layout = () => {
+            if (!s.image) return;
+            const margin = 16;
+            const fit = Math.min(
+              (s.stageW - margin) / s.image.naturalWidth,
+              (s.stageH - margin) / s.image.naturalHeight,
+            );
+            const baseScale = Math.max(0.05, fit);
+            const effScale = baseScale * s.zoom;
+            s.baseScale = baseScale;
+            s.scale = effScale;
+            s.dispW = s.image.naturalWidth * effScale;
+            s.dispH = s.image.naturalHeight * effScale;
+            // Centre the image inside the stage (pan is relative to this).
+            s.panX = (s.stageW - s.dispW) / 2;
+            s.panY = (s.stageH - s.dispH) / 2;
+          };
+          // Expose layout to the component body so the "Fit" button can
+          // call it after resetting zoom.
+          s.layout = layout;
+
+          s.draw = () => {
+            if (!s.image) return;
+            ctx.clearRect(0, 0, s.stageW, s.stageH);
+            // Dim the entire stage first; the bright crop region is then
+            // punched back through with the un-dimmed image clipped to it.
+            ctx.fillStyle = "rgba(0, 0, 0, 0.5)";
+            ctx.fillRect(0, 0, s.stageW, s.stageH);
+            ctx.drawImage(
+              s.image,
+              s.panX,
+              s.panY,
+              s.dispW,
+              s.dispH,
+            );
+            if (s.rect) {
+              // Re-draw inside the rectangle using `globalCompositeOperation
+              // = 'destination-out'` to clear the dim layer, then composite
+              // the bright image in. Equivalent to clipping to the rect.
+              ctx.save();
+              ctx.beginPath();
+              ctx.rect(s.rect.x, s.rect.y, s.rect.size, s.rect.size);
+              ctx.clip();
+              ctx.drawImage(
+                s.image,
+                s.panX,
+                s.panY,
+                s.dispW,
+                s.dispH,
+              );
+              ctx.restore();
+              ctx.strokeStyle = "#1e88e5";
+              ctx.lineWidth = 2;
+              ctx.strokeRect(s.rect.x, s.rect.y, s.rect.size, s.rect.size);
+            }
+          };
+
+          // Convert a pointer event to canvas coordinates (displayed px).
+          const toCanvasCoords = (e) => {
+            const r = canvas.getBoundingClientRect();
+            const native = e.nativeEvent || e;
+            const src = (native.touches && native.touches[0]) || native;
+            return { cx: src.clientX - r.left, cy: src.clientY - r.top };
+          };
+
+          const hitRect = (cx, cy) =>
+            s.rect &&
+            cx >= s.rect.x && cx <= s.rect.x + s.rect.size &&
+            cy >= s.rect.y && cy <= s.rect.y + s.rect.size;
+
+          const clampRect = (rect) => {
+            // The crop square must fit inside the displayed image bounds.
+            const minX = s.panX;
+            const minY = s.panY;
+            const maxX = s.panX + s.dispW - rect.size;
+            const maxY = s.panY + s.dispH - rect.size;
+            rect.x = Math.max(minX, Math.min(rect.x, maxX));
+            rect.y = Math.max(minY, Math.min(rect.y, maxY));
+          };
+          s.clampRect = clampRect;
+
+          const onPointerDown = (e) => {
+            if (!s.image) return;
+            const { cx, cy } = toCanvasCoords(e);
+            // Middle-button or Shift-held → pan.
+            const wantPan =
+              (e.button === 1) || (e.shiftKey) || (e.altKey);
+            if (wantPan) {
+              s.dragging = {
+                kind: "pan",
+                startX: cx,
+                startY: cy,
+                origPanX: s.panX,
+                origPanY: s.panY,
+              };
+              e.preventDefault();
+              return;
+            }
+            if (hitRect(cx, cy)) {
+              s.dragging = {
+                kind: "rect",
+                startX: cx,
+                startY: cy,
+                origX: s.rect.x,
+                origY: s.rect.y,
+              };
+            } else {
+              // Drop a fresh default-sized square centred on the click.
+              const size = Math.min(
+                Math.min(s.dispW, s.dispH) / 2,
+                240,
+              );
+              const newRect = {
+                x: cx - size / 2,
+                y: cy - size / 2,
+                size,
+              };
+              clampRect(newRect);
+              s.rect = newRect;
+              s.draw();
+            }
+          };
+
+          const onPointerMove = (e) => {
+            if (!s.dragging) return;
+            const { cx, cy } = toCanvasCoords(e);
+            if (s.dragging.kind === "rect") {
+              const r = s.rect;
+              const dx = cx - s.dragging.startX;
+              const dy = cy - s.dragging.startY;
+              r.x = s.dragging.origX + dx;
+              r.y = s.dragging.origY + dy;
+              clampRect(r);
+            } else if (s.dragging.kind === "pan") {
+              s.panX = s.dragging.origPanX + (cx - s.dragging.startX);
+              s.panY = s.dragging.origPanY + (cy - s.dragging.startY);
+            }
+            s.draw();
+          };
+
+          const onPointerUp = () => { s.dragging = null; };
+
+          // Wheel: zoom around the cursor. ctrlKey meta modifiers keep the
+          // page from scrolling while the user is over the canvas.
+          const onWheel = (e) => {
+            if (!s.image) return;
+            e.preventDefault();
+            const { cx, cy } = toCanvasCoords(e);
+            // deltaY > 0 → zoom out, < 0 → zoom in. Each tick multiplies
+            // by ~1.15×.
+            const factor = e.deltaY < 0 ? 1.15 : 1 / 1.15;
+            const oldZoom = s.zoom;
+            const newZoom = Math.max(0.2, Math.min(oldZoom * factor, 8));
+            if (newZoom === oldZoom) return;
+            // Keep the image point under the cursor stationary across the
+            // zoom step. Image-space position under cursor before zoom:
+            const imgX = (cx - s.panX) / (s.baseScale * oldZoom);
+            const imgY = (cy - s.panY) / (s.baseScale * oldZoom);
+            s.zoom = newZoom;
+            // Recompute dispW/dispH/pan so the new image rect is centred,
+            // then shift pan so the original image point stays under the
+            // cursor.
+            layout();
+            s.panX = cx - imgX * s.scale;
+            s.panY = cy - imgY * s.scale;
+            // Re-clamp the crop rectangle to the new image bounds.
+            if (s.rect) clampRect(s.rect);
+            s.draw();
+          };
+
+          canvas.addEventListener("mousedown", onPointerDown);
+          canvas.addEventListener("mousemove", onPointerMove);
+          canvas.addEventListener("mouseleave", onPointerUp);
+          canvas.addEventListener("mouseup", onPointerUp);
+          canvas.addEventListener("touchstart", (e) => {
+            onPointerDown(e);
+            e.preventDefault();
+          }, { passive: false });
+          canvas.addEventListener("touchmove", (e) => {
+            onPointerMove(e);
+            e.preventDefault();
+          }, { passive: false });
+          canvas.addEventListener("touchend", onPointerUp);
+          canvas.addEventListener("wheel", onWheel, { passive: false });
+
+          // Load the image. The cache may already have it from the
+          // AvatarCard that opened the modal, in which case the load is
+          // synchronous from this point of view.
+          let cancelled = false;
+          let img = null;
+          (async () => {
+            let entry = imageCache.getEntry(item.key);
+            if (!entry || entry.state !== "ready") {
+              entry = await imageCache.load(item.key, () =>
+                fetchAvatarDataUrl(item.key),
+              );
+            }
+            if (cancelled) return;
+            if (!entry || entry.state !== "ready") {
+              setFailed(true);
+              toast("加载图片失败", "error");
+              return;
+            }
+            img = new Image();
+            img.onload = () => {
+              if (cancelled) return;
+              s.image = img;
+              // Initial crop: centre of the source image.
+              const target = item.crop
+                ? item.crop
+                : defaultSquare(img.naturalWidth, img.naturalHeight);
+              // First layout, then place the crop at its source position.
+              layout();
+              const placed = {
+                x: s.panX + target.x * s.scale,
+                y: s.panY + target.y * s.scale,
+                size: Math.min(target.w, target.h) * s.scale,
+              };
+              clampRect(placed);
+              s.rect = placed;
+              s.draw();
+              setReady(true);
+              // Schedule a second paint on the next animation frame so
+              // the canvas is guaranteed to commit after React's commit
+              // phase has finished laying out the new DOM (some browsers
+              // would otherwise composite the empty canvas first).
+              requestAnimationFrame(() => {
+                if (!cancelled) s.draw();
+              });
+            };
+            img.onerror = () => {
+              if (cancelled) return;
+              setFailed(true);
+              toast("加载图片失败", "error");
+            };
+            img.src = entry.dataUrl;
+          })();
+
+          return () => {
+            cancelled = true;
+            cancelAnimationFrame(raf);
+            ro.disconnect();
+            if (img) {
+              img.onload = null;
+              img.onerror = null;
+            }
+            window.removeEventListener("resize", onResize);
+            canvas.removeEventListener("mousedown", onPointerDown);
+            canvas.removeEventListener("mousemove", onPointerMove);
+            canvas.removeEventListener("mouseleave", onPointerUp);
+            canvas.removeEventListener("mouseup", onPointerUp);
+            canvas.removeEventListener("wheel", onWheel);
+          };
+        }, [item.key, item.crop, toast]);
+
+        // Reset crop to centred default size, fitted to the current zoom.
+        const handleReset = () => {
+          const s = stateRef.current;
+          if (!s.image || !s.layout) return;
+          const def = defaultSquare(s.image.naturalWidth, s.image.naturalHeight);
+          const placed = {
+            x: s.panX + def.x * s.scale,
+            y: s.panY + def.y * s.scale,
+            size: Math.min(def.w, def.h) * s.scale,
+          };
+          if (s.clampRect) s.clampRect(placed);
+          s.rect = placed;
+          s.draw();
+        };
+
+        // Reset zoom to fit the image into the stage, recentring it.
+        const handleFit = () => {
+          const s = stateRef.current;
+          if (!s.image || !s.layout) return;
+          s.zoom = 1;
+          s.layout();
+          if (s.rect && s.clampRect) s.clampRect(s.rect);
+          s.draw();
+        };
+
+        const handleSave = async () => {
+          if (!ready || saving) return;
+          setSaving(true);
+          const s = stateRef.current;
+          if (!s.rect) {
+            setSaving(false);
+            return;
+          }
+          // Translate displayed canvas coordinates back to source pixels.
+          const payload = {
+            x: Math.round((s.rect.x - s.panX) / s.scale),
+            y: Math.round((s.rect.y - s.panY) / s.scale),
+            w: Math.round(s.rect.size / s.scale),
+            h: Math.round(s.rect.size / s.scale),
+            aspect: 1.0,
+          };
+          try {
+            await bridge.apiPost(
+              `avatars/${encodeKeyForPath(item.key)}/crop`,
+              payload,
+            );
+            toast("裁切已保存", "success");
+            onSaved(item.key, payload);
+            onClose();
+          } catch (err) {
+            toast("保存失败: " + err.message, "error");
+          } finally {
+            setSaving(false);
+          }
+        };
+
+        return (
+          <div
+            className="modal-mask"
+            onClick={(e) => {
+              if (e.target.classList.contains("modal-mask")) onClose();
+            }}
+          >
+            <div className="modal" role="dialog">
+              <h2>裁切 {item.name}</h2>
+              <div className="muted">
+                原图 {item.width}x{item.height} ·
+                拖动框选 1:1 区域 · 滚轮缩放 · Shift+拖动平移
+              </div>
+              <div className="stage" ref={containerRef}>
+                <canvas ref={canvasRef}></canvas>
+                {failed ? (
+                  <div className="muted" style={{ textAlign: "center", marginTop: "8px" }}>
+                    图片加载失败
+                  </div>
+                ) : null}
+                {!ready && !failed ? (
+                  <div className="muted" style={{ textAlign: "center", marginTop: "8px" }}>
+                    加载中...
+                  </div>
+                ) : null}
+              </div>
+              <div className="hint">
+                裁切数据保存在 crops.json,下次轮换时按此区域裁切后上传
+              </div>
+              <div className="modal-actions">
+                <button
+                  className="secondary"
+                  onClick={handleReset}
+                  disabled={!ready || saving}
+                >
+                  重置
+                </button>
+                <button
+                  className="secondary"
+                  onClick={handleFit}
+                  disabled={!ready || saving}
+                >
+                  适应窗口
+                </button>
+                <button
+                  className="danger"
+                  onClick={onClose}
+                  disabled={saving}
+                >
+                  取消
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={!ready || saving}
+                >
+                  {saving ? "保存中..." : "保存"}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      // === App ===============================================================
+      // react-window exposes itself as window.ReactWindow. We alias the
+      // helpers we use so the JSX stays readable and so a future swap to
+      // @tanstack/react-virtual is a single-line change.
+      const { FixedSizeList } = window.ReactWindow;
+      // Card sizing knobs — together with the .item CSS this sets the
+      // height that react-window reserves per virtual row. One row holds
+      // multiple cards laid out by CSS grid; the row height is the height
+      // of one card.
+      const CARD_MIN_WIDTH = 180;     // must match the .virtual-row minmax
+      const CARD_GAP = 12;            // must match .virtual-row gap
+      // Card row height — fixed so FixedSizeList can compute offsets
+      // without measuring. Sized to fit a 1:1 thumbnail (180 px tall at
+      // CARD_MIN_WIDTH) + name/meta/actions chrome + 16 px body padding.
+      const CARD_ROW_HEIGHT = 290;
+
+      function App() {
+        const [library, setLibrary] = useState([]);
+        const [schedulerState, setSchedulerState] = useState(null);
+        const [loading, setLoading] = useState(true);
+        const [uploading, setUploading] = useState(false);
+        const [uploadStatus, setUploadStatus] = useState("");
+        const [cropKey, setCropKey] = useState(null);
+        // Virtual-scroll metrics. `listWidth`/`listHeight` are measured from
+        // the grid wrapper via ResizeObserver and feed FixedSizeList.
+        // `cardsPerRow` is derived from listWidth / (CARD_MIN_WIDTH + gap).
+        const [listWidth, setListWidth] = useState(0);
+        const [listHeight, setListHeight] = useState(360);
+        const gridWrapRef = useRef(null);
+        const { show: toast, view: toastView } = useToast();
+
+        // Mirror the library array into a ref so memoised callbacks
+        // (handleDelete etc.) can read the current value without having to
+        // list `library` in their dependency arrays.
+        const libraryRef = useRef(library);
+        useEffect(() => {
+          libraryRef.current = library;
+        }, [library]);
+
+        // Measure the grid wrapper to feed react-window. We compute the
+        // height by reserving ~60 vh (or a sensible floor) and update on
+        // resize via ResizeObserver. Width is clamped to >= 240 so very
+        // narrow viewports still render a single column instead of zero.
+        useEffect(() => {
+          const wrap = gridWrapRef.current;
+          if (!wrap) return;
+          const measure = () => {
+            const rect = wrap.getBoundingClientRect();
+            const w = Math.max(240, rect.width);
+            const h = Math.max(240, Math.round(window.innerHeight * 0.6));
+            setListWidth((prev) => (prev === w ? prev : w));
+            setListHeight((prev) => (prev === h ? prev : h));
+          };
+          measure();
+          const ro = new ResizeObserver(measure);
+          ro.observe(wrap);
+          window.addEventListener("resize", measure);
+          return () => {
+            ro.disconnect();
+            window.removeEventListener("resize", measure);
+          };
+        }, []);
+
+        const refresh = useCallback(async () => {
+          try {
+            const res = await bridge.apiGet("avatars");
+            setLibrary(res.avatars || []);
+            setSchedulerState(res.state || null);
+          } catch (err) {
+            toast("加载失败: " + err.message, "error");
+          } finally {
+            setLoading(false);
+          }
+        }, [toast]);
+
+        useEffect(() => {
+          refresh();
+        }, [refresh]);
+
+        const uploadFiles = useCallback(async (fileList) => {
+          if (!fileList || !fileList.length) return;
+          setUploading(true);
+          let ok = 0;
+          let fail = 0;
+          for (const file of fileList) {
+            setUploadStatus(`上传中: ${file.name} ...`);
+            try {
+              await bridge.upload("avatars/upload", file);
+              ok++;
+            } catch (err) {
+              fail++;
+              toast(`上传 ${file.name} 失败: ${err.message}`, "error");
+            }
+          }
+          setUploadStatus(`本次上传 ${ok} 张,失败 ${fail} 张`);
+          setTimeout(() => setUploadStatus(""), 3000);
+          setUploading(false);
+          // Refresh once at the end — each new avatar will be fetched once
+          // into the cache as its <AvatarCard> mounts.
+          await refresh();
+        }, [refresh, toast]);
+
+        // Drag-and-drop + click-to-upload handlers, attached imperatively
+        // because the input element lives inside a label that React renders.
+        const dropRef = useRef(null);
+        const fileInputRef = useRef(null);
+        useEffect(() => {
+          const drop = dropRef.current;
+          const input = fileInputRef.current;
+          if (!drop || !input) return;
+          const onClick = () => input.click();
+          const onChange = (e) => {
+            uploadFiles(e.target.files);
+            input.value = "";
+          };
+          const onDragOver = (e) => {
+            e.preventDefault();
+            drop.classList.add("dragover");
+          };
+          const onDragLeave = () => drop.classList.remove("dragover");
+          const onDrop = (e) => {
+            e.preventDefault();
+            drop.classList.remove("dragover");
+            if (e.dataTransfer && e.dataTransfer.files) {
+              uploadFiles(e.dataTransfer.files);
+            }
+          };
+          drop.addEventListener("click", onClick);
+          input.addEventListener("change", onChange);
+          ["dragenter", "dragover"].forEach((evt) =>
+            drop.addEventListener(evt, onDragOver),
+          );
+          ["dragleave", "drop"].forEach((evt) =>
+            drop.addEventListener(evt, onDragLeave),
+          );
+          drop.addEventListener("drop", onDrop);
+          return () => {
+            drop.removeEventListener("click", onClick);
+            input.removeEventListener("change", onChange);
+            ["dragenter", "dragover"].forEach((evt) =>
+              drop.removeEventListener(evt, onDragOver),
+            );
+            ["dragleave", "drop"].forEach((evt) =>
+              drop.removeEventListener(evt, onDragLeave),
+            );
+            drop.removeEventListener("drop", onDrop);
+          };
+        }, [uploadFiles]);
+
+        const handleRotate = useCallback(async () => {
+          try {
+            const r = await bridge.apiPost("rotate", {});
+            toast("已更换: " + (r.rotated || ""), "success");
+            await refresh();
+          } catch (err) {
+            toast("更换失败: " + err.message, "error");
+          }
+        }, [refresh, toast]);
+
+        const handleDelete = useCallback(async (key) => {
+          // Look the item up through a ref so this callback doesn't have to
+          // depend on the live `library` array (which would bust AvatarCard
+          // memoisation every time setLibrary fires). The ref is updated by
+          // a tiny effect above.
+          const item = libraryRef.current.find((i) => i.key === key);
+          if (!item) return;
+          // window.confirm() is blocked inside the sandboxed iframe
+          // (sandbox lacks allow-modals); use the in-app ConfirmDialog.
+          const confirmed = await confirmDialog({
+            message: `确定删除 ${item.name} ?`,
+            confirmLabel: "删除",
+            cancelLabel: "取消",
+            danger: true,
+          });
+          if (!confirmed) return;
+          try {
+            await bridge.apiPost(
+              `avatars/${encodeKeyForPath(key)}/delete`,
+              {},
+            );
+            imageCache.invalidate(key);
+            toast("已删除", "success");
+            await refresh();
+          } catch (err) {
+            toast("删除失败: " + err.message, "error");
+          }
+        }, [refresh, toast]);
+
+        const handleClearCrop = useCallback(async (key) => {
+          try {
+            await bridge.apiPost(
+              `avatars/${encodeKeyForPath(key)}/crop`,
+              {},
+            );
+            toast("已清除裁切", "success");
+            // Update only the affected item rather than triggering a global
+            // refresh — this is the core fix that prevents the base64 src
+            // churn the previous vanilla implementation suffered.
+            setLibrary((prev) =>
+              prev.map((it) =>
+                it.key === key
+                  ? { ...it, crop: null, has_crop: false }
+                  : it,
+              ),
+            );
+          } catch (err) {
+            toast("清除失败: " + err.message, "error");
+          }
+        }, [toast]);
+
+        const handleCropSaved = useCallback((key, payload) => {
+          // Pessimistic merge of the new crop without re-fetching the whole
+          // library — the saved card re-renders with has_crop=true and the
+          // (cached) data URL is reused; nothing else in the grid changes.
+          setLibrary((prev) =>
+            prev.map((it) =>
+              it.key === key
+                ? { ...it, crop: payload, has_crop: true }
+                : it,
+            ),
+          );
+        }, []);
+
+        // Stable actions bundle for AvatarCard so memoisation survives
+        // re-renders. The individual callbacks are memoised above; this
+        // object literal would normally be re-created on every render and
+        // bust the memo, so we freeze it with useMemo.
+        const cardActions = useMemo(() => ({
+          onCrop: setCropKey,
+          onClearCrop: handleClearCrop,
+          onDelete: handleDelete,
+        }), [handleClearCrop, handleDelete]);
+
+        // Stable close callback for CropModal so a sibling state change
+        // (e.g. toast appear/disappear) does not unmount and remount the
+        // modal mid-interaction.
+        const closeCropModal = useCallback(() => setCropKey(null), []);
+
+        const cropItem = useMemo(
+          () => (cropKey ? library.find((it) => it.key === cropKey) : null),
+          [cropKey, library],
+        );
+
+        const counts = useMemo(() => {
+          const c = { total: library.length, qq: 0, webui: 0, cropped: 0 };
+          for (const item of library) {
+            if (item.source === "qq") c.qq++;
+            else if (item.source === "webui") c.webui++;
+            if (item.has_crop) c.cropped++;
+          }
+          return c;
+        }, [library]);
+
+        // Virtual scroll row packing. Each row holds
+        // `cardsPerRow` AvatarCards laid out via CSS grid, and each row
+        // reserves exactly CARD_ROW_HEIGHT px of vertical space inside
+        // the FixedSizeList viewport. The list only ever mounts the
+        // visible rows — so the DOM count stays bounded regardless of
+        // library size, and the IntersectionObserver inside each card
+        // gates the actual image fetch too.
+        const cardsPerRow = listWidth > 0
+          ? Math.max(1, Math.floor((listWidth + CARD_GAP) / (CARD_MIN_WIDTH + CARD_GAP)))
+          : 1;
+        const rowCount = Math.ceil(library.length / cardsPerRow);
+        // Slice the library into one array of rows so the FixedSizeList
+        // row renderer can read all cards in that row without scanning
+        // the whole library.
+        const rows = useMemo(() => {
+          const out = [];
+          for (let r = 0; r < rowCount; r++) {
+            out.push(library.slice(r * cardsPerRow, (r + 1) * cardsPerRow));
+          }
+          return out;
+        }, [library, rowCount, cardsPerRow]);
+
+        const subtitle = useMemo(() => {
+          if (!schedulerState) return "加载中...";
+          const last = schedulerState.last_avatar
+            ? formatTimestamp(schedulerState.last_changed_at)
+            : "尚未更换";
+          const next = schedulerState.next_run_at
+            ? formatTimestamp(schedulerState.next_run_at)
+            : "尚未安排";
+          return `上次更换: ${last} · 下次计划: ${next} · ${
+            schedulerState.paused ? "已暂停" : "运行中"
+          }`;
+        }, [schedulerState]);
+
+        return (
+          <div className="wrap">
+            <h1>头像库管理</h1>
+            <div className="muted">{subtitle}</div>
+            <div className="stats">
+              <span>总数 {counts.total}</span>
+              <span>QQ 上传 {counts.qq}</span>
+              <span>WebUI 上传 {counts.webui}</span>
+              <span>已裁切 {counts.cropped}</span>
+            </div>
+
+            <div className="row" style={{ marginTop: "16px" }}>
+              <div className="card upload-card">
+                <h2 style={{ margin: "0 0 12px", fontSize: "16px" }}>
+                  上传新头像
+                </h2>
+                <label className="drop" ref={dropRef}>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    ref={fileInputRef}
+                  />
+                  <div>点击或拖拽图片到这里上传</div>
+                  <div className="muted">
+                    支持 JPG / PNG / WebP / BMP,可一次选择多张
+                  </div>
+                </label>
+                <div className="hint">
+                  {uploadStatus || (uploading ? "上传中..." : "")}
+                </div>
+                <div style={{ marginTop: "12px", display: "flex", gap: "8px" }}>
+                  <button
+                    className="secondary"
+                    onClick={handleRotate}
+                    disabled={uploading || loading}
+                  >
+                    立即换头像
+                  </button>
+                </div>
+              </div>
+
+              <div className="card library-card">
+                <h2 style={{ margin: "0 0 4px", fontSize: "16px" }}>
+                  图库 <span className="muted">({counts.total})</span>
+                </h2>
+                <div className="muted">
+                  点击缩略图可裁切 (1:1),裁切后下次轮换会按此区域生效
+                </div>
+                {loading ? (
+                  <div className="muted" style={{ marginTop: "16px" }}>
+                    加载中...
+                  </div>
+                ) : library.length === 0 ? (
+                  <div
+                    className="muted"
+                    style={{
+                      padding: "24px",
+                      textAlign: "center",
+                      marginTop: "12px",
+                    }}
+                  >
+                    图库为空,通过左边的上传框或 QQ 指令 /添加轮换头像 添加头像
+                  </div>
+                ) : (
+                  <div className="virtual-grid-wrap" ref={gridWrapRef}>
+                    <FixedSizeList
+                      height={listHeight}
+                      width={listWidth}
+                      itemCount={rows.length}
+                      itemSize={CARD_ROW_HEIGHT}
+                      layout="vertical"
+                      overscanCount={2}
+                    >
+                      {({ index, style }) => {
+                        const row = rows[index] || [];
+                        return (
+                          <div
+                            key={index}
+                            className="virtual-row"
+                            style={{
+                              ...style,
+                              // react-window sets `top` for vertical lists;
+                              // the height comes from itemSize. Add the
+                              // bottom inset so the next row's gap isn't
+                              // eaten by FixedSizeList's overflow:hidden.
+                              boxSizing: "border-box",
+                              paddingBottom: CARD_GAP,
+                            }}
+                          >
+                            {row.map((item) => (
+                              <AvatarCard
+                                key={item.key}
+                                item={item}
+                                actions={cardActions}
+                              />
+                            ))}
+                          </div>
+                        );
+                      }}
+                    </FixedSizeList>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {cropItem ? (
+              <CropModal
+                item={cropItem}
+                onClose={closeCropModal}
+                onSaved={handleCropSaved}
+                toast={toast}
+              />
+            ) : null}
+            {toastView}
+          </div>
+        );
+      }
+
+      // === Boot ==============================================================
+      function applyTheme(ctx) {
+        document.documentElement.setAttribute(
+          "data-theme",
+          ctx && ctx.isDark ? "dark" : "light",
+        );
+      }
+
+      bridge.ready().then((ctx) => {
+        applyTheme(ctx);
+        bridge.onContext((next) => applyTheme(next));
+        const root = ReactDOM.createRoot(document.getElementById("root"));
+        root.render(<App />);
       });
     </script>
   </body>
