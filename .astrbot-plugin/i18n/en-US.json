@@ -1,0 +1,11 @@
+{
+  "metadata": {
+    "display_name": "QQ Avatar Rotator"
+  },
+  "pages": {
+    "avatar": {
+      "title": "Avatar Library",
+      "desc": "Upload / view / 1:1 crop your QQ avatar rotation library."
+    }
+  }
+}

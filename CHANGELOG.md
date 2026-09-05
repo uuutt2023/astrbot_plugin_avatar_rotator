@@ -1,5 +1,19 @@
 # 更新日志
 
+## 1.3.0 (WebUI 重写)
+
+将 WebUI Page 从 Babel-standalone + 手写组件 + 三个 vendored 库 (react / react-dom / babel) 重构为标准的 esbuild + React 18 + Ant Design 5 SPA:
+
+- 删除四个 vendored 脚本 (`react.production.min.js` 10KB + `react-dom` 129KB + `babel.min.js` 2.7MB + `react-window.iife.js` 85KB, 合计约 2.9MB)
+- 替换为单个 esbuild 产物 `assets/app.js` (656KB) + `assets/app.css` (3.7KB),总体积减少约 78%
+- 改用 esbuild 0.18 作为构建器,CommonJS 兼容 Node 12+ / Windows 7
+- 保留全部功能: 1:1 裁切 (canvas 拖拽 / 滚轮缩放 / Shift+平移) / 立即换头像 / LRU 图片缓存 (80 条上限 8MB) / IntersectionObserver 延迟加载 / 暗色主题 / 浅色主题 / 中英双语
+- 把 react-window 改为 `react-window@1.8.10` (官方 CommonJS 包,不需要手动 IIFE 包装)
+- 新增 `.astrbot-plugin/i18n/{zh-CN,en-US}.json` 插件级 i18n,bridge `t()` 自动 fallback
+- `webui/src/` 保留可读的 React + TypeScript 源码,可在现代机器上 `npm run dev` 用 Vite 5 热开发
+
+API 接口契约 (`/avatars`, `/avatars/upload`, `/avatars/<key:path>/image`, `/avatars/<key:path>/crop`, `/avatars/<key:path>/delete`, `/avatars/<key:path>/stripped`, `/rotate`, `/state`) 与 v1.2.0 完全一致,**不需重启** 现有后端。
+
 ## 1.2.0
 
 - 增加 AstrBot WebUI Page:在 AstrBot 侧边栏出现「头像库」入口,可上传图片、查看持久化图库、按 1:1 比例裁切、保存裁切数据并清除。

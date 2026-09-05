@@ -7,3 +7,11 @@ __pycache__/
 .venv/
 data/
 
+# WebUI build artifacts
+webui/node_modules/
+webui/dist/
+
+# dev helpers
+push.cmd
+pr.cmd
+.tmp/

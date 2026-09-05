@@ -1,7 +1,21 @@
+# Auto-detect text files
 * text=auto eol=lf
-*.jpg binary
-*.jpeg binary
-*.png binary
-*.webp binary
-*.bmp binary
 
+# Force LF for source code
+*.py      text eol=lf
+*.ts      text eol=lf
+*.tsx     text eol=lf
+*.js      text eol=lf
+*.cjs     text eol=lf
+*.mjs     text eol=lf
+*.json    text eol=lf
+*.css     text eol=lf
+*.html    text eol=lf
+*.md      text eol=lf
+*.yaml    text eol=lf
+*.yml     text eol=lf
+*.cmd     text eol=crlf
+*.bat     text eol=crlf
+
+# Ignore built bundle source maps if added
+*.map     binary

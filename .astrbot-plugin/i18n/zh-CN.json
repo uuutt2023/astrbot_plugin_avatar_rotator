@@ -1,0 +1,11 @@
+{
+  "metadata": {
+    "display_name": "QQ头像自动轮换"
+  },
+  "pages": {
+    "avatar": {
+      "title": "头像库管理",
+      "desc": "上传 / 查看 / 1:1 裁切 QQ 头像轮换图库。"
+    }
+  }
+}
