@@ -1,21 +1,43 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { App as AntApp, ConfigProvider, theme as antdTheme, Button, Space, Statistic, Tag, Tooltip, Upload, App, Alert } from "antd";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  CloudUploadOutlined, ReloadOutlined, BulbOutlined, BulbFilled, ThunderboltOutlined,
+  App as AntApp,
+  ConfigProvider,
+  theme as antdTheme,
+  Button,
+  Space,
+  Statistic,
+  Tooltip,
+  Upload,
+  App,
+  Alert,
+} from "antd";
+import {
+  ReloadOutlined,
+  BulbOutlined,
+  BulbFilled,
+  ThunderboltOutlined,
   InboxOutlined,
 } from "@ant-design/icons";
 import zhCN from "antd/locale/zh_CN";
 import enUS from "antd/locale/en_US";
-import { QueryClient, QueryClientProvider, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  QueryClient,
+  QueryClientProvider,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { FixedSizeList } from "react-window";
-import { API, type AvatarItem, type LibraryResp, clearImageCache, loadImage } from "./api";
+import { API, type AvatarItem, clearImageCache } from "./api";
 import { useBridge } from "./bridge";
 import { t } from "./i18n";
 import { useUI, persistStorage } from "./store";
 import { AvatarCard, type AvatarCardActions } from "./AvatarCard";
 import { CropModal } from "./CropModal";
 
-const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 10_000 } } });
+const qc = new QueryClient({
+  defaultOptions: { queries: { retry: 1, staleTime: 10_000 } },
+});
 
 const CARD_MIN_WIDTH = 180;
 const CARD_GAP = 12;
@@ -33,22 +55,32 @@ export function AppRoot() {
 
 function Root() {
   const ctx = useBridge();
+  const { message } = App.useApp();
   const cropTarget = useUI((s) => s.cropTarget);
   const setCropTarget = useUI((s) => s.setCropTarget);
-  const showUpload = useUI((s) => s.showUpload);
   const setShowUpload = useUI((s) => s.setShowUpload);
   const theme = useUI((s) => s.theme);
   const setTheme = useUI((s) => s.setTheme);
-  const qc = useQueryClient();
+  const queryClient = useQueryClient();
 
   // Apply bridge theme on mount if no local preference
   useEffect(() => {
     const saved = persistStorage.get<"light" | "dark" | null>("theme", null);
-    if (saved) setTheme(saved);
-    else if (ctx?.isDark) setTheme("dark");
+    if (saved) {
+      setTheme(saved);
+    } else if (ctx?.isDark) {
+      setTheme("dark");
+    }
   }, [ctx, setTheme]);
 
+  // Sync theme to <html data-theme> when it changes (skip first render
+  // because the initial state already reflects the persisted choice).
+  const isFirstThemeRender = useRef(true);
   useEffect(() => {
+    if (isFirstThemeRender.current) {
+      isFirstThemeRender.current = false;
+      return;
+    }
     if (typeof document !== "undefined") {
       document.documentElement.setAttribute("data-theme", theme);
     }
@@ -56,52 +88,63 @@ function Root() {
 
   const listQuery = useQuery({
     queryKey: ["library"],
-    queryFn: async () => {
-      return await API.list();
-    },
+    queryFn: () => API.list(),
   });
 
   const rotateMut = useMutation({
     mutationFn: API.rotateNow,
     onSuccess: (res) => {
-      const name = (res?.rotated || "").split("/").pop() || "";
+      const name = res?.name || "";
       message.success(t(ctx, "library.rotateOk", "", { name }));
-      qc.invalidateQueries({ queryKey: ["library"] });
+      queryClient.invalidateQueries({ queryKey: ["library"] });
     },
     onError: (e: any) => {
       message.error(t(ctx, "library.rotateFail", "", { msg: e?.message || String(e) }));
     },
   });
 
-  const { message } = App.useApp();
-
   const deleteMut = useMutation({
-    mutationFn: async (key: string) => API.delete(key),
+    mutationFn: (id: string) => API.delete(id),
     onSuccess: () => {
       clearImageCache();
-      qc.invalidateQueries({ queryKey: ["library"] });
+      queryClient.invalidateQueries({ queryKey: ["library"] });
+    },
+    onError: (e: any) => {
+      message.error(t(ctx, "toast.fail", "", { msg: e?.message || String(e) }));
     },
   });
 
   const clearCropMut = useMutation({
-    mutationFn: async (key: string) => API.clearCrop(key),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["library"] }),
+    mutationFn: (id: string) => API.clearCrop(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["library"] }),
+    onError: (e: any) => {
+      message.error(t(ctx, "toast.fail", "", { msg: e?.message || String(e) }));
+    },
   });
 
   const setCropMut = useMutation({
-    mutationFn: async (args: { key: string; payload: { x: number; y: number; w: number; h: number; aspect: number } }) =>
-      API.setCrop(args.key, args.payload),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["library"] }),
+    mutationFn: (args: {
+      id: string;
+      payload: { x: number; y: number; w: number; h: number; aspect: number };
+    }) => API.setCrop(args.id, args.payload),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["library"] }),
+    onError: (e: any) => {
+      message.error(t(ctx, "toast.fail", "", { msg: e?.message || String(e) }));
+    },
   });
 
-  // stable actions bundle so AvatarCard memoization survives sibling updates
-  const actions = useMemo<AvatarCardActions>(() => ({
-    onCrop: (k) => setCropTarget(k),
-    onDelete: (k) => deleteMut.mutateAsync(k),
-    onClearCrop: (k) => clearCropMut.mutateAsync(k),
-  }), [deleteMut, clearCropMut, setCropTarget]);
+  // Stable actions bundle so AvatarCard memoization survives sibling updates.
+  const actions = useMemo<AvatarCardActions>(
+    () => ({
+      onCrop: (id) => setCropTarget(id),
+      onDelete: (id) => deleteMut.mutateAsync(id),
+      onClearCrop: (id) => clearCropMut.mutateAsync(id),
+    }),
+    [deleteMut, clearCropMut, setCropTarget],
+  );
 
-  // virtual list sizing
+  // Virtual list sizing via a ResizeObserver. Keeps the layout
+  // responsive without per-component glue code.
   const gridRef = useRef<HTMLDivElement | null>(null);
   const [gridSize, setGridSize] = useState({ width: 800, height: 600 });
   useEffect(() => {
@@ -134,12 +177,17 @@ function Root() {
     1,
     Math.floor((gridSize.width + CARD_GAP) / (CARD_MIN_WIDTH + CARD_GAP)),
   );
-  const rows: AvatarItem[][] = [];
-  for (let i = 0; i < library.length; i += cardsPerRow) {
-    rows.push(library.slice(i, i + cardsPerRow));
-  }
+  const rows: AvatarItem[][] = useMemo(() => {
+    const out: AvatarItem[][] = [];
+    for (let i = 0; i < library.length; i += cardsPerRow) {
+      out.push(library.slice(i, i + cardsPerRow));
+    }
+    return out;
+  }, [library, cardsPerRow]);
 
-  const cropItem = cropTarget ? library.find((it) => it.key === cropTarget) || null : null;
+  const cropItem = cropTarget
+    ? library.find((it) => it.id === cropTarget) || null
+    : null;
   const isDark = theme === "dark";
   const locale = ctx?.locale === "en-US" ? enUS : zhCN;
 
@@ -213,18 +261,19 @@ function Root() {
             onChange={async ({ fileList }) => {
               if (!fileList.length) return;
               setShowUpload(false);
-              let ok = 0, fail = 0;
+              let ok = 0;
+              let fail = 0;
               for (const f of fileList) {
                 const origin = f.originFileObj || f;
                 try {
                   await API.upload(origin);
                   ok++;
-                } catch (e) {
+                } catch {
                   fail++;
                 }
               }
               message.success(t(ctx, "upload.done", "", { ok, fail }));
-              qc.invalidateQueries({ queryKey: ["library"] });
+              queryClient.invalidateQueries({ queryKey: ["library"] });
             }}
             style={{ padding: 8 }}
           >
@@ -263,7 +312,7 @@ function Root() {
                     }}
                   >
                     {rows[index].map((item) => (
-                      <AvatarCard key={item.key} item={item} actions={actions} />
+                      <AvatarCard key={item.id} item={item} actions={actions} />
                     ))}
                   </div>
                 </div>
@@ -279,7 +328,7 @@ function Root() {
         <CropModal
           item={cropItem}
           onClose={() => setCropTarget(null)}
-          onSaved={(key, payload) => setCropMut.mutate({ key, payload })}
+          onSaved={(id, payload) => setCropMut.mutate({ id, payload })}
         />
       )}
     </ConfigProvider>

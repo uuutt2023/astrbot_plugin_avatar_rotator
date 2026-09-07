@@ -229,25 +229,25 @@ class AvatarRotatorPlugin(Star):
                 "Upload a new avatar image",
             ),
             (
-                f"/{PLUGIN_NAME}/avatars/<key:path>/image",
+                f"/{PLUGIN_NAME}/avatars/<id>/image",
                 self._webui_get_avatar_image,
                 ["GET"],
-                "Fetch the original bytes of an avatar",
+                "Fetch the original bytes of an avatar by id",
             ),
             (
-                f"/{PLUGIN_NAME}/avatars/<key:path>/crop",
+                f"/{PLUGIN_NAME}/avatars/<id>/crop",
                 self._webui_set_or_clear_crop,
                 ["POST"],
                 "Set or clear crop metadata; payload {x,y,w,h} sets, empty clears",
             ),
             (
-                f"/{PLUGIN_NAME}/avatars/<key:path>/delete",
+                f"/{PLUGIN_NAME}/avatars/<id>/delete",
                 self._webui_delete_avatar,
                 ["POST"],
                 "Delete an avatar from the library",
             ),
             (
-                f"/{PLUGIN_NAME}/avatars/<key:path>/stripped",
+                f"/{PLUGIN_NAME}/avatars/<id>/stripped",
                 self._webui_download_stripped,
                 ["GET"],
                 "Download the cropped preview of an avatar",
@@ -369,6 +369,86 @@ class AvatarRotatorPlugin(Star):
             return resolved.relative_to(self.data_dir.resolve(strict=False)).as_posix()
         except ValueError:
             return resolved.as_posix()
+
+    @staticmethod
+    def _is_valid_numeric_id(raw: str) -> int | None:
+        """Validate and parse a numeric avatar id (positive integer).
+
+        Used to be a sha256-derived hex string; the WebUI page bridge
+        re-encodes paths in unexpected ways (Chinese filenames become
+        "%25E4%25B8..." soup), which made the id brittle. A stable
+        numeric id derived from the avatar's position in the
+        deterministic library list is robust against any path encoding
+        quirks and stays valid as long as the list ordering is stable.
+
+        Returns the integer id, or ``None`` if ``raw`` is not a
+        positive integer within the allowed range.
+        """
+        if not isinstance(raw, str):
+            return None
+        s = raw.strip()
+        if not s or not s.isdigit():
+            return None
+        try:
+            value = int(s)
+        except (TypeError, ValueError):
+            return None
+        # cap at 2^31-1 to fit comfortably in any int range
+        if value < 1 or value > 2_147_483_647:
+            return None
+        return value
+
+    def _avatar_id(self, key: str) -> str:
+        """Return a numeric identifier for an avatar key.
+
+        The id is the 1-based index of the avatar in the deterministic
+        sorted library list (see ``_list_avatars``). It is stable as
+        long as the underlying file list doesn't change, and avoids the
+        multi-segment / non-ASCII / URL-encoding pitfalls that plagued
+        the old sha256-derived hex string.
+        """
+        for index, path in enumerate(self._list_avatars()):
+            if self._avatar_key(path) == key:
+                return str(index + 1)
+        # Fallback for keys not currently in the list (e.g. during
+        # partial state updates). Returns "0" so callers can detect
+        # the missing avatar.
+        return "0"
+
+    def _resolve_avatar_by_id(self, avatar_id: str) -> tuple[str, Path] | None:
+        """Return ``(key, path)`` for a numeric avatar id, or ``None``.
+
+        The id is the 1-based index of the avatar in
+        ``_list_avatars()``. Linear indexing is O(1) and bounded by
+        the number of avatars in the library.
+        """
+        if not avatar_id:
+            return None
+        n = self._is_valid_numeric_id(avatar_id)
+        if n is None:
+            return None
+        avatars = self._list_avatars()
+        if n < 1 or n > len(avatars):
+            return None
+        path = avatars[n - 1]
+        return self._avatar_key(path), path
+
+    @staticmethod
+    def _avatar_id_from_request() -> str | None:
+        """Read ``?id=`` from the current request query (if any)."""
+        if request is None:
+            return None
+        try:
+            value = request.query.get("id")
+        except Exception:
+            return None
+        if not isinstance(value, str) or not value.strip():
+            return None
+        # Numeric id: positive integer, max length 10 digits.
+        value = value.strip()
+        if len(value) > 10 or not value.isdigit():
+            return None
+        return value
 
     def _is_webui_avatar(self, avatar: Path) -> bool:
         """Check whether an avatar belongs to the WebUI upload collection.
@@ -608,7 +688,14 @@ class AvatarRotatorPlugin(Star):
             cropped.save(target, format="JPEG", quality=94, optimize=True)
 
     async def _webui_list_avatars(self) -> Any:
-        """Return a JSON-friendly list of avatars + crop state."""
+        """Return a JSON-friendly list of avatars + crop state.
+
+        Each item includes ``id`` (the 1-based numeric index into the
+        deterministic sorted library list) and ``key`` (the full
+        relative path). The WebUI should reference avatars by id;
+        ``key`` is still returned for display and backwards
+        compatibility with the older UI code paths that look it up.
+        """
         items: list[dict[str, Any]] = []
         for path in self._list_avatars():
             key = self._avatar_key(path)
@@ -624,6 +711,7 @@ class AvatarRotatorPlugin(Star):
                 width, height = 0, 0
             items.append(
                 {
+                    "id": self._avatar_id(key),
                     "key": key,
                     "name": path.name,
                     "size": size,
@@ -709,6 +797,7 @@ class AvatarRotatorPlugin(Star):
                 )
         return _ok(
             {
+                "id": self._avatar_id(self._avatar_key(destination)),
                 "key": self._avatar_key(destination),
                 "name": destination.name,
                 "size": len(normalized),
@@ -743,7 +832,7 @@ class AvatarRotatorPlugin(Star):
                 return path
         return None
 
-    def _webui_get_avatar_image(self, key: str) -> Any:
+    def _webui_get_avatar_image(self, id: str) -> Any:
         """Return the avatar bytes for the cropper preview.
 
         By default this returns a Starlette ``FileResponse`` (binary JPEG).
@@ -757,10 +846,17 @@ class AvatarRotatorPlugin(Star):
         loading: a tiny blurred preview first, then a sharp version on
         top once the preview is in place. Saves both bandwidth and the
         "blank while loading" gap on slow connections.
+
+        The avatar is identified by its 1-based numeric ``id``
+        (see ``_avatar_id``), not the multi-segment ``key`` — this
+        keeps the URL clean of non-ASCII characters and avoids the
+        dashboard's repeated URL-encoding turning ``%E4%B8...`` into
+        ``%25E4%25B8...``.
         """
-        path = self._resolve_avatar_by_key(key)
-        if path is None:
+        resolved = self._resolve_avatar_by_id(id)
+        if resolved is None:
             return _err("avatar not found", status_code=404)
+        key, path = resolved
         try:
             # read_bytes validates the file is readable before we hand it off.
             path.read_bytes()
@@ -826,7 +922,7 @@ class AvatarRotatorPlugin(Star):
             target.parent.mkdir(parents=True, exist_ok=True)
             image.save(target, format="JPEG", quality=78, optimize=True)
 
-    async def _webui_set_or_clear_crop(self, key: str) -> Any:
+    async def _webui_set_or_clear_crop(self, id: str) -> Any:
         """Persist the crop rectangle or clear it depending on the payload.
 
         A payload containing ``x``, ``y``, ``w`` and ``h`` (all positive
@@ -834,14 +930,15 @@ class AvatarRotatorPlugin(Star):
         body, or non-positive dimensions) clears the crop.
 
         Args:
-            key: Avatar key (relative path under the plugin data dir).
+            id: Avatar numeric id (1-based library index from ``_avatar_id``).
 
         Returns:
             JSON response with the new crop (or ``cleared: true``).
         """
-        path = self._resolve_avatar_by_key(key)
-        if path is None:
+        resolved = self._resolve_avatar_by_id(id)
+        if resolved is None:
             return _err("avatar not found", status_code=404)
+        key, path = resolved
         if request is None:
             return _err("page bridge unavailable", status_code=503)
         try:
@@ -889,11 +986,12 @@ class AvatarRotatorPlugin(Star):
         self._cleanup_stale_crop_cache()
         return _ok({"crop": self.crops[key]})
 
-    async def _webui_delete_avatar(self, key: str) -> Any:
+    async def _webui_delete_avatar(self, id: str) -> Any:
         """Delete an avatar from the library and clear its crop entry."""
-        path = self._resolve_avatar_by_key(key)
-        if path is None:
+        resolved = self._resolve_avatar_by_id(id)
+        if resolved is None:
             return _err("avatar not found", status_code=404)
+        key, path = resolved
         webui_avatar = self._is_webui_avatar(path)
         try:
             path.unlink()
@@ -940,7 +1038,10 @@ class AvatarRotatorPlugin(Star):
             selected = await self._rotate_avatar(bot)
         except Exception as exc:
             return _err(str(exc), status_code=500)
-        return _ok({"rotated": self._avatar_key(selected)})
+        return _ok({
+            "rotated": self._avatar_id(self._avatar_key(selected)),
+            "name": selected.name,
+        })
 
     def _webui_state(self) -> Any:
         """Return a snapshot of the scheduler + crop state."""
@@ -959,7 +1060,7 @@ class AvatarRotatorPlugin(Star):
             }
         )
 
-    def _webui_download_stripped(self, key: str) -> Any:
+    def _webui_download_stripped(self, id: str) -> Any:
         """Return the cropped JPEG used for one avatar (or the original).
 
         Same response shape switch as ``_webui_get_avatar_image``: by default
@@ -972,9 +1073,10 @@ class AvatarRotatorPlugin(Star):
         ``/stripped`` endpoint in particular is only consumed by the
         modal so we keep the default behaviour for it.
         """
-        path = self._resolve_avatar_by_key(key)
-        if path is None:
+        resolved = self._resolve_avatar_by_id(id)
+        if resolved is None:
             return _err("avatar not found", status_code=404)
+        key, path = resolved
         crop = self.crops.get(key)
         if not crop:
             return self._maybe_thumbed_image_response(

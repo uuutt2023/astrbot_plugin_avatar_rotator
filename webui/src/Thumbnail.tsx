@@ -15,8 +15,9 @@
 // We also wire in a shared IntersectionObserver (one per page) so that
 // off-screen cards do not start any network work — only when the card
 // enters a generous viewport (rootMargin 600px) does the load begin.
-import React, { useEffect, useState } from "react";
-import { loadImage, THUMB_SIZE, FULL_SIZE, subscribeImageCache, getCacheVersion } from "./api";
+import { useEffect, useState } from "react";
+import clsx from "clsx";
+import { loadImage, THUMB_SIZE, FULL_SIZE, subscribeImageCache } from "./api";
 
 let sharedObserver: IntersectionObserver | null = null;
 const observedElements = new WeakMap<Element, () => void>();
@@ -41,7 +42,10 @@ function getObserver(): IntersectionObserver | null {
 
 function observeElement(el: Element, cb: () => void): () => void {
   const obs = getObserver();
-  if (!obs) { cb(); return () => {}; }
+  if (!obs) {
+    cb();
+    return () => {};
+  }
   observedElements.set(el, cb);
   obs.observe(el);
   return () => {
@@ -51,8 +55,8 @@ function observeElement(el: Element, cb: () => void): () => void {
 }
 
 export type ThumbnailProps = {
-  /** Avatar key (path under plugin data dir). */
-  src: string;
+  /** Avatar id (numeric string from the server's ``_avatar_id``). */
+  id: string;
   /** Alt text. */
   alt?: string;
   /**
@@ -67,11 +71,9 @@ export type ThumbnailProps = {
   imgClassName?: string;
 };
 
-export function Thumbnail({ src, alt = "", fixedSize, className, imgClassName }: ThumbnailProps) {
-  const [thumbUrl, setThumbUrl] = useState<string | null>(() => loadImage(src, THUMB_SIZE).then((u) => u) as any);
-  const [fullUrl, setFullUrl] = useState<string | null>(
-    fixedSize === undefined ? loadImage(src, FULL_SIZE).then((u) => u) as any : null,
-  );
+export function Thumbnail({ id, alt = "", fixedSize, className, imgClassName }: ThumbnailProps) {
+  const [thumbUrl, setThumbUrl] = useState<string | null>(null);
+  const [fullUrl, setFullUrl] = useState<string | null>(null);
   // Bump on cache invalidation (e.g. after a delete) so cards that
   // are still mounted re-fetch. The state values are read inside
   // the effect that subscribes to the cache.
@@ -85,23 +87,31 @@ export function Thumbnail({ src, alt = "", fixedSize, className, imgClassName }:
     document.body.appendChild(el);
     const cleanup = observeElement(el, () => {
       if (cancelled) return;
-      loadImage(src, THUMB_SIZE).then((u) => { if (!cancelled) setThumbUrl(u); });
+      loadImage(id, THUMB_SIZE).then((u) => {
+        if (!cancelled) setThumbUrl(u);
+      });
       if (fixedSize === undefined) {
-        loadImage(src, FULL_SIZE).then((u) => { if (!cancelled) setFullUrl(u); });
+        loadImage(id, FULL_SIZE).then((u) => {
+          if (!cancelled) setFullUrl(u);
+        });
       }
     });
     // kick a load immediately in case the observer doesn't fire (very
     // tall viewports, or when cards render above the fold)
-    loadImage(src, THUMB_SIZE).then((u) => { if (!cancelled) setThumbUrl(u); });
+    loadImage(id, THUMB_SIZE).then((u) => {
+      if (!cancelled) setThumbUrl(u);
+    });
     if (fixedSize === undefined) {
-      loadImage(src, FULL_SIZE).then((u) => { if (!cancelled) setFullUrl(u); });
+      loadImage(id, FULL_SIZE).then((u) => {
+        if (!cancelled) setFullUrl(u);
+      });
     }
     return () => {
       cancelled = true;
       cleanup();
       el.remove();
     };
-  }, [src, fixedSize]);
+  }, [id, fixedSize]);
 
   // If `fixedSize` is provided, the caller wants a single image only.
   if (fixedSize !== undefined) {
@@ -111,13 +121,13 @@ export function Thumbnail({ src, alt = "", fixedSize, className, imgClassName }:
           <img
             src={thumbUrl}
             alt={alt}
-            className={imgClassName}
+            className={clsx(imgClassName)}
             loading="lazy"
             decoding="async"
             draggable={false}
           />
         ) : (
-          <div className={`${imgClassName ?? ""} qg-img-skel`} />
+          <div className={clsx(imgClassName, "qg-img-skel")} />
         )}
       </div>
     );
@@ -131,7 +141,7 @@ export function Thumbnail({ src, alt = "", fixedSize, className, imgClassName }:
           src={thumbUrl}
           alt=""
           aria-hidden
-          className={`${imgClassName ?? ""} qg-img-preview`}
+          className={clsx(imgClassName, "qg-img-preview")}
           draggable={false}
         />
       )}
@@ -140,15 +150,13 @@ export function Thumbnail({ src, alt = "", fixedSize, className, imgClassName }:
         <img
           src={fullUrl}
           alt={alt}
-          className={`${imgClassName ?? ""} qg-img-sharp`}
+          className={clsx(imgClassName, "qg-img-sharp")}
           loading="lazy"
           decoding="async"
           draggable={false}
         />
       )}
-      {!thumbUrl && !fullUrl && (
-        <div className={`${imgClassName ?? ""} qg-img-skel`} />
-      )}
+      {!thumbUrl && !fullUrl && <div className={clsx(imgClassName, "qg-img-skel")} />}
     </div>
   );
 }

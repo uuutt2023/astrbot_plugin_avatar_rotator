@@ -1,15 +1,18 @@
-// API client + image cache with two-stage (LQIP) loading support.
+// API client + image cache with two-stage (LQIP) loading.
 //
-// We request two sizes per avatar:
-//   - thumbnail (192px): tiny, ~3-8KB. Used as a CSS-blurred preview
-//     so cards have something to show almost immediately.
-//   - full (1024px or original): used for the crop modal and the
-//     preview/detail view.
-//
-// Both sizes share the same data-URL cache, keyed by `${key}@${size}`.
+// Each avatar has a stable numeric ``id`` (1-based index into the
+// server's deterministic sorted library list) returned by /avatars.
+// The WebUI always references avatars by id instead of the full
+// multi-segment key — this keeps URLs clean, avoids the dashboard's
+// repeated percent-encoding turning Chinese filenames into
+// "%25E4%25B8..." soup, and aligns the bridge round-trip with the
+// route handler's <id> path parameter.
 import { apiGet, apiPost, uploadFile } from "./bridge";
 
 export type AvatarItem = {
+  /** 1-based numeric id, stable per server-side sorted library list. */
+  id: string;
+  /** Full relative path under plugin data dir. Kept for display only. */
   key: string;
   name: string;
   size: number;
@@ -45,6 +48,25 @@ export type StateResp = {
   crop_count: number;
 };
 
+export type UploadResp = {
+  id: string;
+  key: string;
+  name: string;
+  size: number;
+};
+
+export type RotateResp = {
+  rotated: string;
+  name: string;
+};
+
+export type ImageData = {
+  image: string;
+  filename?: string;
+  content_type?: string;
+  size?: number;
+};
+
 export const THUMB_SIZE = 192;     // LQIP for grid cards
 export const FULL_SIZE = 1024;    // sharp version, used for preview
 export const ORIGINAL_SIZE = 0;    // sentinel for "no size param, send original"
@@ -52,38 +74,21 @@ export const ORIGINAL_SIZE = 0;    // sentinel for "no size param, send original
 export const API = {
   list: () => apiGet<LibraryResp>("avatars"),
   state: () => apiGet<StateResp>("state"),
-  upload: (file: File) => uploadFile("avatars/upload", file),
-  delete: (key: string) => apiPost<{ deleted: boolean }>(`avatars/${encodeKey(key)}/delete`, {}),
-  setCrop: (key: string, payload: { x: number; y: number; w: number; h: number; aspect: number }) =>
-    apiPost<{ crop?: any; cleared?: boolean }>(`avatars/${encodeKey(key)}/crop`, payload),
-  clearCrop: (key: string) =>
-    apiPost<{ cleared: boolean }>(`avatars/${encodeKey(key)}/crop`, {}),
-  rotateNow: () => apiPost<{ rotated: string }>("rotate", {}),
+  upload: (file: File) => uploadFile("avatars/upload", file) as Promise<UploadResp>,
+  delete: (id: string) => apiPost<{ deleted: boolean }>(`avatars/${id}/delete`, {}),
+  setCrop: (id: string, payload: { x: number; y: number; w: number; h: number; aspect: number }) =>
+    apiPost<{ crop?: any; cleared?: boolean }>(`avatars/${id}/crop`, payload),
+  clearCrop: (id: string) =>
+    apiPost<{ cleared: boolean }>(`avatars/${id}/crop`, {}),
+  rotateNow: () => apiPost<RotateResp>("rotate", {}),
 };
-
-/**
- * Avatar keys are stored as relative paths under the plugin data dir
- * (e.g. "avatars/20250101_xxx.jpg"). The backend route uses
- * `<key:path>` to receive multi-segment keys. The dashboard normalizes
- * the endpoint by URL-encoding each segment individually (see
- * `normalizePluginEndpoint` in dashboard server), so we MUST keep the
- * "/" separators as real path delimiters and let the server encode
- * each segment. Encoding "/" to "%2F" causes the dashboard to re-encode
- * it to "%252F", which breaks the route.
- */
-export function encodeKey(key: string): string {
-  return String(key || "")
-    .split("/")
-    .map((seg) => encodeURIComponent(seg))
-    .join("/");
-}
 
 // ---- image cache --------------------------------------------------------
 
 const IMAGE_CACHE_MAX_ENTRIES = 80;
 const IMAGE_CACHE_MAX_ENTRY_BYTES = 8 * 1024 * 1024;
 
-// key format: `${avatarKey}@${sizePx|0}` where sizePx=0 means original
+// key format: `${avatarId}@${sizePx|0}` where sizePx=0 means original
 type CacheKey = string;
 
 const cache = new Map<CacheKey, string>();
@@ -108,12 +113,12 @@ export function subscribeImageCache(cb: () => void): () => void {
   };
 }
 
-function buildCacheKey(key: string, size: number): CacheKey {
-  return `${key}@${size}`;
+function buildCacheKey(id: string, size: number): CacheKey {
+  return `${id}@${size}`;
 }
 
-export function getCachedImage(key: string, size: number): string | null {
-  return cache.get(buildCacheKey(key, size)) || null;
+export function getCachedImage(id: string, size: number): string | null {
+  return cache.get(buildCacheKey(id, size)) || null;
 }
 
 export function clearImageCache() {
@@ -126,13 +131,13 @@ export function clearImageCache() {
  * (no `?size=` param). Smaller sizes serve a Pillow-resized JPEG from
  * the backend, which is much smaller on the wire and renders faster.
  *
- * Concurrent requests for the same key+size dedupe: the second caller
+ * Concurrent requests for the same id+size dedupe: the second caller
  * attaches to the first promise instead of issuing a duplicate fetch.
  */
 const inflight = new Map<CacheKey, Promise<string | null>>();
 
-export function loadImage(key: string, size: number = THUMB_SIZE): Promise<string | null> {
-  const cacheKey = buildCacheKey(key, size);
+export function loadImage(id: string, size: number = THUMB_SIZE): Promise<string | null> {
+  const cacheKey = buildCacheKey(id, size);
   if (cache.has(cacheKey)) return Promise.resolve(cache.get(cacheKey)!);
   const existing = inflight.get(cacheKey);
   if (existing) return existing;
@@ -142,12 +147,11 @@ export function loadImage(key: string, size: number = THUMB_SIZE): Promise<strin
       const params: Record<string, any> = { format: "data_url" };
       if (size > 0) params.size = size;
       const data = await apiGet<{ image: string; filename?: string; content_type?: string; size?: number }>(
-        `avatars/${encodeKey(key)}/image`,
+        `avatars/${id}/image`,
         params,
       );
       if (!data || !data.image) return null;
       if (data.image.length > IMAGE_CACHE_MAX_ENTRY_BYTES) {
-        // don't keep oversized entries
         return data.image;
       }
       while (cache.size >= IMAGE_CACHE_MAX_ENTRIES) {
@@ -168,12 +172,12 @@ export function loadImage(key: string, size: number = THUMB_SIZE): Promise<strin
   return promise;
 }
 
-export async function loadStripped(key: string, size: number = FULL_SIZE): Promise<string | null> {
+export async function loadStripped(id: string, size: number = FULL_SIZE): Promise<string | null> {
   try {
     const params: Record<string, any> = { format: "data_url" };
     if (size > 0) params.size = size;
     const data = await apiGet<{ image: string }>(
-      `avatars/${encodeKey(key)}/stripped`,
+      `avatars/${id}/stripped`,
       params,
     );
     return data?.image || null;
@@ -187,10 +191,10 @@ export async function loadStripped(key: string, size: number = FULL_SIZE): Promi
  * cache entry is dropped on delete via clearImageCache(); this is just a
  * safety net for any local-only caches the upper layers may build.
  */
-export function dropImageCache(key: string) {
+export function dropImageCache(id: string) {
   let dirty = false;
   for (const ck of Array.from(cache.keys())) {
-    if (ck.startsWith(key + "@")) {
+    if (ck.startsWith(id + "@")) {
       cache.delete(ck);
       dirty = true;
     }

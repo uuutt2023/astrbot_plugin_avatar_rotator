@@ -4,6 +4,7 @@ import { persistStorage } from "./persist";
 export type Theme = "light" | "dark";
 
 type UIState = {
+  /** Numeric avatar id (string) currently open in the crop modal, or null. */
   cropTarget: string | null;
   theme: Theme;
   showUpload: boolean;
@@ -13,15 +14,29 @@ type UIState = {
   setShowUpload: (b: boolean) => void;
 };
 
+/**
+ * UI store. Persists the theme choice via the shared ``persistStorage``
+ * helper so the same persistence scheme applies whether we use the
+ * zustand/persist middleware or write directly. The mutation API
+ * deliberately mirrors the immer style (``set`` with a partial
+ * object) so future code can swap in ``zustand/middleware/immer``
+ * without changing the call sites.
+ */
 export const useUI = create<UIState>((set, get) => ({
   cropTarget: null,
-  theme: (typeof document !== "undefined" && document.documentElement.getAttribute("data-theme") === "dark") ? "dark" : "light",
+  theme:
+    typeof document !== "undefined" &&
+    document.documentElement.getAttribute("data-theme") === "dark"
+      ? "dark"
+      : "light",
   showUpload: false,
 
   setCropTarget: (key) => set({ cropTarget: key }),
   setTheme: (t) => {
     set({ theme: t });
-    if (typeof document !== "undefined") document.documentElement.setAttribute("data-theme", t);
+    if (typeof document !== "undefined") {
+      document.documentElement.setAttribute("data-theme", t);
+    }
     persistStorage.set("theme", t);
   },
   toggleTheme: () => {
@@ -31,9 +46,4 @@ export const useUI = create<UIState>((set, get) => ({
   setShowUpload: (b) => set({ showUpload: b }),
 }));
 
-export const persistStorage = {
-  get<T = any>(k: string, d: T = null as any): T {
-    try { const v = localStorage.getItem("avt:" + k); return v ? JSON.parse(v) : d; } catch { return d; }
-  },
-  set(k: string, v: any) { try { localStorage.setItem("avt:" + k, JSON.stringify(v)); } catch {} },
-};
+export { persistStorage };

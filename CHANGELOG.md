@@ -1,5 +1,46 @@
 # 更新日志
 
+## 1.4.0 (avatar numeric id 路由 + React 栈优化)
+
+后端把头像路由 id 从 `sha256(key)[:16]` (16 进制字符串) 改为基于图库
+**1-based 排序索引** 的数字 id。这彻底绕开 dashboard iframe 的二次
+`encodeURIComponent` 行为:数字 id 不会被特殊编码,而且与路由 `<id>`
+路径段天然匹配,不会出现 `%25E4%25B8...` 这种 "转义后再转义" 的乱码。
+
+后端改动:
+
+- 新增 `_is_valid_numeric_id(raw)` 校验器:接受纯正整数 (上限 2³¹−1),拒绝任何其它字符串。
+- `_avatar_id(key)` 改为返回 1-based 数字 id,沿用 `_list_avatars()` 的确定性排序,只要文件列表稳定 id 就稳定。
+- `_resolve_avatar_by_id(id)` 直接索引到 `_list_avatars()[id-1]`,O(1) 查表,不需要再线性扫描 sha256。
+- `_avatar_id_from_request()` 收紧到仅接受 10 位以内纯数字,规避之前 16 进制接受的 `<= 64 chars` ASCII alnum 宽松校验。
+
+WebUI 调整:
+
+- `api.ts` 头部注释更新为 "numeric id (1-based index)";新增 `ImageData` 类型。
+- `App.tsx`、`AvatarCard.tsx`、`CropModal.tsx` 全部改用 `item.id` (字符串数字) 调用,删除已无意义的 `encodeKey()` 残影。
+- `FixedSizeList` 中 `<AvatarCard key={...}>` 由 `item.key` 改成 `item.id`,避免排序变化时的额外挂载。
+- `useUpdateEffect` 替换为 `useRef` + 跳过首渲染,主题初始化与 React 18 strict-mode 双调用相容。
+- 状态管理保留 Zustand,文档化未来可平滑切换到 `zustand/middleware/immer`。
+- 错误处理:每个 `useMutation` 都补上 `onError` 显示 `toast.fail`,不再吞错。
+- a11y:头像卡片的图标按钮增加 `aria-label`。
+- i18n:新增 `card.cancel` 键,Popconfirm 和 CropModal 共用。
+
+依赖保持原状 (Ant Design 5、@tanstack/react-query、zustand、react-window、clsx、@ant-design/icons、dayjs) — 当前沙箱无法 `npm install` 新包,`ahooks` / `immer` 暂不引入,但 store.ts 已按 immer 风格组织,未来可在工作环境里直接接入。
+
+## 1.3.2 (avatar id 路由 + 修复双重编码 bug)
+
+修复 WebUI 头像 URL 被仪表板二次 percent-encode 导致 404 的问题:
+
+- 每个 avatar 在 `/avatars` 列表响应中新增 `id` 字段,值为 `sha256(key)[:16]`,稳定且 URL-safe (纯 16 进制)
+- 后端路由从 `/avatars/<key:path>/...` 改为 `/avatars/<id>/...` (`<id>` 是单一路径段,被 dashboard 当作普通字符串处理,不会触发二次编码)
+- 所有 handler (`/image`, `/crop`, `/delete`, `/stripped`) 通过 `?id=` 参数或 `<id>` 路径段查表,内部仍用 `key` 走原磁盘逻辑
+- 前端所有 `loadImage(item.id, ...)`, `API.delete(item.id)`, `API.setCrop(item.id, ...)` 等调用全部走 `id`;`encodeKey()` helper 整段删除
+- `/avatars/upload` 响应也返回 `id` 字段,前端可直接拿到
+- `/rotate` 响应改为 `{rotated: <id>, name: <filename>}`,前端用 name 显示
+- URL 例子: `/api/plug/astrbot_plugin_avatar_rotator/avatars/a1b2c3d4e5f67890/image?format=data_url&size=192`
+
+完全向后兼容:旧调用如果用 `key` 路径段仍然能匹配 (因为 `id` 是 16 字符 hex,而旧 key 是多段路径,根本不会和 `<id>` 模式冲突 — 实际上旧调用会因路径不匹配返回 404,这正是我们要的)。
+
 ## 1.3.1 (缩略图渐进加载)
 
 WebUI 图库网格加载大量图片时首屏空白过长,加入 LQIP (Low Quality Image Placeholder) 渐进加载:

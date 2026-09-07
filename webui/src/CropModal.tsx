@@ -12,7 +12,7 @@
 //
 // All canvas state lives in a ref so drag/wheel/zoom never triggers a
 // React re-render. Only `ready` and `failed` drive actual render.
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Modal, Button, Space, App as AntApp } from "antd";
 import { ZoomInOutlined, ZoomOutOutlined, ReloadOutlined, CheckOutlined } from "@ant-design/icons";
 import type { AvatarItem } from "./api";
@@ -42,7 +42,11 @@ export function CropModal({
 }: {
   item: AvatarItem;
   onClose: () => void;
-  onSaved: (key: string, crop: { x: number; y: number; w: number; h: number; aspect: number }) => void;
+  /** Called with the avatar id (numeric string) and the new crop rectangle. */
+  onSaved: (
+    id: string,
+    crop: { x: number; y: number; w: number; h: number; aspect: number },
+  ) => void;
 }) {
   const ctx = useBridge();
   const { message } = AntApp.useApp();
@@ -144,7 +148,7 @@ export function CropModal({
     // triggers a fresh fetch of the original bytes. For an SVG/canvas
     // cropper this is necessary: we need exact source pixels, not the
     // 192px preview the cards use.
-    loadImage(item.key, 0).then((url) => {
+    loadImage(item.id, 0).then((url) => {
       if (!url) { setFailed(true); return; }
       const img = new Image();
       img.onload = () => {
@@ -289,7 +293,7 @@ export function CropModal({
       canvas.removeEventListener("wheel", onWheel);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [item.key, ready]);
+  }, [item.id, ready]);
 
   // expose handlers for buttons
   const fit = () => {
@@ -356,9 +360,9 @@ export function CropModal({
       const y = Math.round((s.rect.y - s.panY) / s.scale);
       const w = Math.round(s.rect.size / s.scale);
       const h = w;
-      await API.setCrop(item.key, { x, y, w, h, aspect: 1.0 });
+      await API.setCrop(item.id, { x, y, w, h, aspect: 1.0 });
       message.success(t(ctx, "crop.saved"));
-      onSaved(item.key, { x, y, w, h, aspect: 1.0 });
+      onSaved(item.id, { x, y, w, h, aspect: 1.0 });
       onClose();
     } catch (e: any) {
       message.error(t(ctx, "toast.fail", "", { msg: e?.message || String(e) }));
@@ -366,6 +370,9 @@ export function CropModal({
       setSaving(false);
     }
   };
+
+  // The two cancel buttons stay localised through i18n.
+  const cancelLabel = t(ctx, "card.cancel", "取消");
 
   return (
     <Modal
@@ -394,7 +401,7 @@ export function CropModal({
           <Button onClick={fit}>{t(ctx, "crop.fit")}</Button>
         </Space>
         <Space>
-          <Button onClick={onClose}>取消</Button>
+          <Button onClick={onClose}>{cancelLabel}</Button>
           <Button type="primary" icon={<CheckOutlined />} loading={saving} onClick={save}>
             {t(ctx, "crop.save")}
           </Button>
