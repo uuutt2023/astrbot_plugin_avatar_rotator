@@ -1,7 +1,12 @@
-// API client + image cache. All binary image responses come back from the
-// backend as `{image: "data:<mime>;base64,..."}` envelopes (see main.py
-// `_wants_data_url()` / `_maybe_image_response()`). We cache the data URLs
-// here so reopening the crop modal on a visible avatar costs no network.
+// API client + image cache with two-stage (LQIP) loading support.
+//
+// We request two sizes per avatar:
+//   - thumbnail (192px): tiny, ~3-8KB. Used as a CSS-blurred preview
+//     so cards have something to show almost immediately.
+//   - full (1024px or original): used for the crop modal and the
+//     preview/detail view.
+//
+// Both sizes share the same data-URL cache, keyed by `${key}@${size}`.
 import { apiGet, apiPost, uploadFile } from "./bridge";
 
 export type AvatarItem = {
@@ -40,6 +45,10 @@ export type StateResp = {
   crop_count: number;
 };
 
+export const THUMB_SIZE = 192;     // LQIP for grid cards
+export const FULL_SIZE = 1024;    // sharp version, used for preview
+export const ORIGINAL_SIZE = 0;    // sentinel for "no size param, send original"
+
 export const API = {
   list: () => apiGet<LibraryResp>("avatars"),
   state: () => apiGet<StateResp>("state"),
@@ -69,27 +78,42 @@ export function encodeKey(key: string): string {
     .join("/");
 }
 
+// ---- image cache --------------------------------------------------------
+
 const IMAGE_CACHE_MAX_ENTRIES = 80;
 const IMAGE_CACHE_MAX_ENTRY_BYTES = 8 * 1024 * 1024;
 
-const cache = new Map<string, string>();
-let cacheSubscribers: Array<() => void> = [];
+// key format: `${avatarKey}@${sizePx|0}` where sizePx=0 means original
+type CacheKey = string;
+
+const cache = new Map<CacheKey, string>();
+let cacheVersion = 0;
+const cacheSubscribers = new Set<() => void>();
 
 function notify() {
+  cacheVersion++;
   for (const cb of cacheSubscribers) {
     try { cb(); } catch {}
   }
 }
 
+export function getCacheVersion(): number {
+  return cacheVersion;
+}
+
 export function subscribeImageCache(cb: () => void): () => void {
-  cacheSubscribers.push(cb);
+  cacheSubscribers.add(cb);
   return () => {
-    cacheSubscribers = cacheSubscribers.filter((c) => c !== cb);
+    cacheSubscribers.delete(cb);
   };
 }
 
-export function getCachedImage(key: string, size: number = 1024): string | null {
-  return cache.get(`${key}@${size}`) || null;
+function buildCacheKey(key: string, size: number): CacheKey {
+  return `${key}@${size}`;
+}
+
+export function getCachedImage(key: string, size: number): string | null {
+  return cache.get(buildCacheKey(key, size)) || null;
 }
 
 export function clearImageCache() {
@@ -97,40 +121,79 @@ export function clearImageCache() {
   notify();
 }
 
-export async function loadImage(key: string, size: number = 1024): Promise<string | null> {
-  const cacheKey = `${key}@${size}`;
-  if (cache.has(cacheKey)) return cache.get(cacheKey)!;
-  try {
-    const data = await apiGet<{ image: string; filename: string; content_type: string; size: number }>(
-      `avatars/${encodeKey(key)}/image`,
-      { format: "data_url" },
-    );
-    if (!data || !data.image) return null;
-    if (data.image.length > IMAGE_CACHE_MAX_ENTRY_BYTES) {
-      // too big to keep around
+/**
+ * Load an image at the requested size. `size = 0` asks for the original
+ * (no `?size=` param). Smaller sizes serve a Pillow-resized JPEG from
+ * the backend, which is much smaller on the wire and renders faster.
+ *
+ * Concurrent requests for the same key+size dedupe: the second caller
+ * attaches to the first promise instead of issuing a duplicate fetch.
+ */
+const inflight = new Map<CacheKey, Promise<string | null>>();
+
+export function loadImage(key: string, size: number = THUMB_SIZE): Promise<string | null> {
+  const cacheKey = buildCacheKey(key, size);
+  if (cache.has(cacheKey)) return Promise.resolve(cache.get(cacheKey)!);
+  const existing = inflight.get(cacheKey);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    try {
+      const params: Record<string, any> = { format: "data_url" };
+      if (size > 0) params.size = size;
+      const data = await apiGet<{ image: string; filename?: string; content_type?: string; size?: number }>(
+        `avatars/${encodeKey(key)}/image`,
+        params,
+      );
+      if (!data || !data.image) return null;
+      if (data.image.length > IMAGE_CACHE_MAX_ENTRY_BYTES) {
+        // don't keep oversized entries
+        return data.image;
+      }
+      while (cache.size >= IMAGE_CACHE_MAX_ENTRIES) {
+        const firstKey = cache.keys().next().value;
+        if (firstKey) cache.delete(firstKey);
+        else break;
+      }
+      cache.set(cacheKey, data.image);
+      notify();
       return data.image;
+    } catch {
+      return null;
+    } finally {
+      inflight.delete(cacheKey);
     }
-    while (cache.size >= IMAGE_CACHE_MAX_ENTRIES) {
-      const firstKey = cache.keys().next().value;
-      if (firstKey) cache.delete(firstKey);
-      else break;
-    }
-    cache.set(cacheKey, data.image);
-    notify();
-    return data.image;
-  } catch {
-    return null;
-  }
+  })();
+  inflight.set(cacheKey, promise);
+  return promise;
 }
 
-export async function loadStripped(key: string): Promise<string | null> {
+export async function loadStripped(key: string, size: number = FULL_SIZE): Promise<string | null> {
   try {
+    const params: Record<string, any> = { format: "data_url" };
+    if (size > 0) params.size = size;
     const data = await apiGet<{ image: string }>(
       `avatars/${encodeKey(key)}/stripped`,
-      { format: "data_url" },
+      params,
     );
     return data?.image || null;
   } catch {
     return null;
   }
+}
+
+/**
+ * Drop a thumbnail from the cache if the avatar was deleted. The full
+ * cache entry is dropped on delete via clearImageCache(); this is just a
+ * safety net for any local-only caches the upper layers may build.
+ */
+export function dropImageCache(key: string) {
+  let dirty = false;
+  for (const ck of Array.from(cache.keys())) {
+    if (ck.startsWith(key + "@")) {
+      cache.delete(ck);
+      dirty = true;
+    }
+  }
+  if (dirty) notify();
 }

@@ -139,8 +139,12 @@ export function CropModal({
     };
     s.draw = draw;
 
-    // load image via cache (AvatarCard already fetched it)
-    loadImage(item.key, 2048).then((url) => {
+    // Load the original full-resolution image (size=0 -> no ?size= param).
+    // The cache may already hold a 192px thumbnail; requesting size 0
+    // triggers a fresh fetch of the original bytes. For an SVG/canvas
+    // cropper this is necessary: we need exact source pixels, not the
+    // 192px preview the cards use.
+    loadImage(item.key, 0).then((url) => {
       if (!url) { setFailed(true); return; }
       const img = new Image();
       img.onload = () => {

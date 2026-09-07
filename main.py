@@ -744,13 +744,19 @@ class AvatarRotatorPlugin(Star):
         return None
 
     def _webui_get_avatar_image(self, key: str) -> Any:
-        """Return the original avatar bytes for the cropper preview.
+        """Return the avatar bytes for the cropper preview.
 
         By default this returns a Starlette ``FileResponse`` (binary JPEG).
         Pass ``?format=data_url`` to receive a JSON envelope ``{"image":
         "data:image/jpeg;base64,..."}`` instead, which the WebUI page can
         assign directly to ``<img src>`` — the iframe's ``bridge.apiGet``
         postMessage proxy cannot return binary payloads to the page.
+
+        Pass ``?size=N`` (32..1024) to downscale the image on the server
+        (Pillow) before sending. The WebUI uses this for two-stage
+        loading: a tiny blurred preview first, then a sharp version on
+        top once the preview is in place. Saves both bandwidth and the
+        "blank while loading" gap on slow connections.
         """
         path = self._resolve_avatar_by_key(key)
         if path is None:
@@ -761,7 +767,64 @@ class AvatarRotatorPlugin(Star):
         except OSError as exc:
             return _err(f"failed to read avatar: {exc}", status_code=500)
 
+        size = self._requested_thumb_size()
+        if size is not None:
+            thumb_path = self._thumb_cache_path(path, size)
+            if not thumb_path.is_file():
+                try:
+                    self._render_thumb(path, thumb_path, size)
+                except Exception as exc:
+                    logger.warning(
+                        "[AvatarRotator] Failed to render thumb for %s: %s",
+                        path.name, exc,
+                    )
+                    return _maybe_image_response(path, content_type="image/jpeg")
+            return _maybe_image_response(thumb_path, content_type="image/jpeg")
+
         return _maybe_image_response(path, content_type="image/jpeg")
+
+    @staticmethod
+    def _requested_thumb_size() -> int | None:
+        """Return the requested thumbnail size (px) or ``None`` for the original.
+
+        Reads ``?size=`` from the current plugin request query. Clamps to
+        a safe 32..1024 range. Returns ``None`` when the param is missing
+        or invalid so the caller falls back to the full-resolution image.
+        """
+        if request is None:
+            return None
+        try:
+            raw = request.query.get("size")
+        except Exception:
+            return None
+        if raw is None:
+            return None
+        try:
+            value = int(raw)
+        except (TypeError, ValueError):
+            return None
+        if value < 32 or value > 1024:
+            return None
+        return value
+
+    def _thumb_cache_path(self, source: Path, size: int) -> Path:
+        """Return the on-disk cache path for a downscaled avatar."""
+        digest = hashlib.sha256(
+            f"{source.resolve()}::{size}".encode("utf-8")
+        ).hexdigest()[:12]
+        return self.data_dir / f".thumb_{size}_{digest}.jpg"
+
+    @staticmethod
+    def _render_thumb(source: Path, target: Path, size: int) -> None:
+        """Render a downscaled JPEG copy of ``source`` into ``target``."""
+        with PILImage.open(source) as image:
+            image = ImageOps.exif_transpose(image)
+            image.load()
+            image.thumbnail((size, size), PILImage.Resampling.LANCZOS)
+            if image.mode != "RGB":
+                image = image.convert("RGB")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            image.save(target, format="JPEG", quality=78, optimize=True)
 
     async def _webui_set_or_clear_crop(self, key: str) -> Any:
         """Persist the crop rectangle or clear it depending on the payload.
@@ -903,13 +966,20 @@ class AvatarRotatorPlugin(Star):
         a binary ``FileResponse``; ``?format=data_url`` returns a
         ``{"image": "data:image/jpeg;base64,..."}`` envelope so the WebUI page
         can render the cropped preview through ``bridge.apiGet``.
+
+        ``?size=N`` (32..1024) downscales the cropped JPEG before
+        sending. The crop modal uses the full-resolution file; the
+        ``/stripped`` endpoint in particular is only consumed by the
+        modal so we keep the default behaviour for it.
         """
         path = self._resolve_avatar_by_key(key)
         if path is None:
             return _err("avatar not found", status_code=404)
         crop = self.crops.get(key)
         if not crop:
-            return _maybe_image_response(path, content_type="image/jpeg")
+            return self._maybe_thumbed_image_response(
+                path, content_type="image/jpeg"
+            )
         digest = hashlib.sha256(
             f"{path.resolve()}::{json.dumps(crop, sort_keys=True)}".encode("utf-8")
         ).hexdigest()[:12]
@@ -924,25 +994,58 @@ class AvatarRotatorPlugin(Star):
             except Exception as exc:
                 return _err(f"failed to crop: {exc}", status_code=500)
 
-        return _maybe_image_response(
-            target,
-            content_type="image/jpeg",
-            filename=f"cropped_{path.stem}.jpg",
+        return self._maybe_thumbed_image_response(
+            target, content_type="image/jpeg", filename=f"cropped_{path.stem}.jpg",
         )
 
+    def _maybe_thumbed_image_response(
+        self,
+        path: Path,
+        *,
+        content_type: str = "image/jpeg",
+        filename: str | None = None,
+    ) -> Any:
+        """Return either a downscaled or full-resolution image response.
+
+        Used by ``/image`` and ``/stripped`` so the WebUI can pull a
+        tiny preview first (CSS-blurred) and a sharp version later.
+        Honours the same ``?size=`` query parameter as
+        ``_webui_get_avatar_image``; falls back to the full file when
+        absent.
+        """
+        size = self._requested_thumb_size()
+        if size is not None:
+            thumb_path = self._thumb_cache_path(path, size)
+            if not thumb_path.is_file():
+                try:
+                    self._render_thumb(path, thumb_path, size)
+                except Exception as exc:
+                    logger.warning(
+                        "[AvatarRotator] Failed to render thumb for %s: %s",
+                        path.name, exc,
+                    )
+                    return _maybe_image_response(
+                        path, content_type=content_type, filename=filename
+                    )
+            return _maybe_image_response(
+                thumb_path, content_type=content_type, filename=filename
+            )
+        return _maybe_image_response(path, content_type=content_type, filename=filename)
+
     def _cleanup_stale_crop_cache(self) -> None:
-        """Remove cached cropped payload files older than 7 days."""
+        """Remove cached cropped payload + thumbnail files older than 7 days."""
         cutoff = time.time_ns() - 7 * 24 * 3600 * 1_000_000_000
-        try:
-            entries = list(self.data_dir.glob(".cropped_*.jpg"))
-        except OSError:
-            return
-        for entry in entries:
+        for pattern in (".cropped_*.jpg", ".thumb_*.jpg"):
             try:
-                if entry.is_file() and entry.stat().st_mtime_ns < cutoff:
-                    entry.unlink(missing_ok=True)
+                entries = list(self.data_dir.glob(pattern))
             except OSError:
                 continue
+            for entry in entries:
+                try:
+                    if entry.is_file() and entry.stat().st_mtime_ns < cutoff:
+                        entry.unlink(missing_ok=True)
+                except OSError:
+                    continue
 
     async def _worker_loop(self) -> None:
         """Run the persistent fixed-interval rotation scheduler."""

@@ -1,5 +1,21 @@
 # 更新日志
 
+## 1.3.1 (缩略图渐进加载)
+
+WebUI 图库网格加载大量图片时首屏空白过长,加入 LQIP (Low Quality Image Placeholder) 渐进加载:
+
+- 后端 `/image` 与 `/stripped` 接口新增 `?size=N` 参数 (32..1024),Pillow 缩放后返回 JPEG,按 `(原图路径, size)` 哈希缓存到 `.thumb_<size>_<hash>.jpg`
+- 前端新增 `<Thumbnail>` 组件,两阶段加载:
+  1. 进入视口后立刻拉 192px 缩略图,渲染为 `filter: blur(20px) scale(1.05)` 的低质量占位
+  2. 同时拉 1024px 高清图,加载完后通过 CSS `opacity` 0.25s 渐变覆盖到模糊占位上
+- 共享的 `IntersectionObserver` (rootMargin 600px) 仍负责触发首次加载,屏幕外的卡片不发起任何网络请求
+- 单张 192px 缩略图平均 3-8KB(原图常 100-500KB),首屏平均流量下降 80%+
+- 缓存键为 `${avatarKey}@${size}`,原图与缩略图共存,LRU 上限 80 条
+- 模态裁切仍走原图(`size=0` = 不带 `?size=`),保证 1:1 像素精度
+- 资源清理:`.thumb_*.jpg` 与 `.cropped_*.jpg` 一同在写入/删除时跑 7 天过期 GC
+
+后端 API 完全向后兼容,未传 `?size=` 时仍返回原图,不影响旧前端调用。
+
 ## 1.3.0 (WebUI 重写)
 
 将 WebUI Page 从 Babel-standalone + 手写组件 + 三个 vendored 库 (react / react-dom / babel) 重构为标准的 esbuild + React 18 + Ant Design 5 SPA:
