@@ -26,6 +26,14 @@ async function run() {
     minify: true,
     sourcemap: false,
     legalComments: "none",
+    // NOTE: ``process.env.NODE_ENV`` MUST be defined as a JSON string,
+    // not a bare identifier. Using JSON.stringify("production") yields
+    // the string ``"production"`` so React/ReactDOM's
+    // ``process.env.NODE_ENV !== "production"`` checks fold correctly
+    // under minification. Passing a non-string here used to leave a
+    // dangling ``production`` token in the bundle that crashed the
+    // dashboard at runtime with
+    // ``Uncaught ReferenceError: production is not defined``.
     define: { "process.env.NODE_ENV": JSON.stringify("production") },
     loader: { ".svg": "text", ".png": "file", ".css": "css" },
     logLevel: "warning",
