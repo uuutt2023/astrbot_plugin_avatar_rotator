@@ -12,8 +12,8 @@
 - 新增 `_is_valid_numeric_id(raw)` 校验器:接受纯正整数 (上限 2³¹−1),拒绝任何其它字符串。
 - `_avatar_id(key)` 改为返回 1-based 数字 id,沿用 `_list_avatars()` 的确定性排序,只要文件列表稳定 id 就稳定。
 - 路由从路径风格 `/avatars/<id>/image` 改为查询风格 `/avatars/image?id=N`,同步改 `crop` / `delete` / `stripped`。
-- `_webui_get_avatar_image` / `_webui_set_or_clear_crop` / `_webui_delete_avatar` / `_webui_download_stripped` 不再接收 `id` 形参,改用 `_avatar_id_from_request()` 从 query 中读取并校验。
-- `_avatar_id_from_request()` 收紧到仅接受 10 位以内纯数字,规避之前 16 进制接受的 `<= 64 chars` ASCII alnum 宽松校验。
+- `_webui_get_avatar_image` / `_webui_set_or_clear_crop` / `_webui_delete_avatar` / `_webui_download_stripped` 不再接收 `id` 形参,改用 `_avatar_id_from_request()` 读取并校验。
+- `_avatar_id_from_request()` 收紧到仅接受 10 位以内纯数字,规避之前 16 进制接受的 `<= 64 chars` ASCII alnum 宽松校验。**同时支持从 JSON body 或 URL query 读取** —— body 优先,query 兜底,所以 GET 请求走 `?id=N`,POST 请求可以把 id 放在 body 里 (`{id, ...payload}`),任一来源缺失另一个仍然有效。
 
 WebUI 调整:
 

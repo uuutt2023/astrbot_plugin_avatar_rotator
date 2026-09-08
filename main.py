@@ -238,13 +238,13 @@ class AvatarRotatorPlugin(Star):
                 f"/{PLUGIN_NAME}/avatars/crop",
                 self._webui_set_or_clear_crop,
                 ["POST"],
-                "Set or clear crop metadata (?id=N); body {x,y,w,h} sets, empty clears",
+                "Set or clear crop metadata; id in body or ?id=, body {x,y,w,h} sets, empty clears",
             ),
             (
                 f"/{PLUGIN_NAME}/avatars/delete",
                 self._webui_delete_avatar,
                 ["POST"],
-                "Delete an avatar (?id=N)",
+                "Delete an avatar; id in body or ?id=",
             ),
             (
                 f"/{PLUGIN_NAME}/avatars/stripped",
@@ -435,13 +435,46 @@ class AvatarRotatorPlugin(Star):
 
     @staticmethod
     def _avatar_id_from_request() -> str | None:
-        """Read ``?id=`` from the current request query (if any)."""
+        """Read ``?id=`` from the current request body or query.
+
+        Accepts the avatar id from either the JSON request body (the
+        REST-ful place for POST payloads) or the URL query string
+        (``?id=N``, the only place GET requests have). Body wins so
+        that POST callers can carry richer payloads (``id`` + crop
+        coords, ``id`` alone for delete) without surprises, while GET
+        callers still work via the query string.
+
+        Returns the validated numeric id string, or ``None`` if the
+        request did not carry a usable id in either location.
+        """
         if request is None:
             return None
+        value: Any = None
+        # 1. JSON body (preferred for POST). The dashboard bridge
+        #    serialises ``apiPost(endpoint, body)`` as JSON, which
+        #    lands in ``request.body`` as a JSON string we can parse
+        #    lazily on demand. Tolerate a pre-decoded dict too in
+        #    case a future bridge version hands us a parsed body.
         try:
-            value = request.query.get("id")
+            raw = request.body
         except Exception:
-            return None
+            raw = None
+        if isinstance(raw, dict):
+            value = raw.get("id")
+        elif isinstance(raw, (bytes, bytearray)) and raw:
+            try:
+                parsed = json.loads(raw.decode("utf-8") or "{}")
+            except Exception:
+                parsed = None
+            if isinstance(parsed, dict):
+                value = parsed.get("id")
+        # 2. URL query (``?id=N``) is the fallback — the only place
+        #    GET endpoints like ``/avatars/image?id=N`` can carry it.
+        if not isinstance(value, str) or not value.strip():
+            try:
+                value = request.query.get("id")
+            except Exception:
+                value = None
         if not isinstance(value, str) or not value.strip():
             return None
         # Numeric id: positive integer, max length 10 digits.
@@ -855,7 +888,7 @@ class AvatarRotatorPlugin(Star):
         """
         id = self._avatar_id_from_request()
         if id is None:
-            return _err("missing or invalid ?id=", status_code=400)
+            return _err("missing or invalid id (pass as JSON body field or ?id=)", status_code=400)
         resolved = self._resolve_avatar_by_id(id)
         if resolved is None:
             return _err("avatar not found", status_code=404)
@@ -940,7 +973,7 @@ class AvatarRotatorPlugin(Star):
         """
         id = self._avatar_id_from_request()
         if id is None:
-            return _err("missing or invalid ?id=", status_code=400)
+            return _err("missing or invalid id (pass as JSON body field or ?id=)", status_code=400)
         resolved = self._resolve_avatar_by_id(id)
         if resolved is None:
             return _err("avatar not found", status_code=404)
@@ -999,7 +1032,7 @@ class AvatarRotatorPlugin(Star):
         """
         id = self._avatar_id_from_request()
         if id is None:
-            return _err("missing or invalid ?id=", status_code=400)
+            return _err("missing or invalid id (pass as JSON body field or ?id=)", status_code=400)
         resolved = self._resolve_avatar_by_id(id)
         if resolved is None:
             return _err("avatar not found", status_code=404)
@@ -1089,7 +1122,7 @@ class AvatarRotatorPlugin(Star):
         """
         id = self._avatar_id_from_request()
         if id is None:
-            return _err("missing or invalid ?id=", status_code=400)
+            return _err("missing or invalid id (pass as JSON body field or ?id=)", status_code=400)
         resolved = self._resolve_avatar_by_id(id)
         if resolved is None:
             return _err("avatar not found", status_code=404)
