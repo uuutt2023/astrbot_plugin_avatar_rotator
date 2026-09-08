@@ -2,11 +2,10 @@
 //
 // Each avatar has a stable numeric ``id`` (1-based index into the
 // server's deterministic sorted library list) returned by /avatars.
-// The WebUI always references avatars by id instead of the full
-// multi-segment key — this keeps URLs clean, avoids the dashboard's
-// repeated percent-encoding turning Chinese filenames into
-// "%25E4%25B8..." soup, and aligns the bridge round-trip with the
-// route handler's <id> path parameter.
+// The WebUI references avatars by ``?id=N`` query parameter — the
+// id is never part of a URL path segment, which keeps URLs clean and
+// avoids the dashboard's repeated percent-encoding turning Chinese
+// filenames into "%25E4%25B8..." soup.
 import { apiGet, apiPost, uploadFile } from "./bridge";
 
 export type AvatarItem = {
@@ -72,15 +71,15 @@ export const FULL_SIZE = 1024;    // sharp version, used for preview
 export const ORIGINAL_SIZE = 0;    // sentinel for "no size param, send original"
 
 export const API = {
-  list: () => apiGet<LibraryResp>("avatars"),
-  state: () => apiGet<StateResp>("state"),
-  upload: (file: File) => uploadFile("avatars/upload", file) as Promise<UploadResp>,
-  delete: (id: string) => apiPost<{ deleted: boolean }>(`avatars/${id}/delete`, {}),
+  list: () => apiGet<LibraryResp>(ENDPOINTS.list),
+  state: () => apiGet<StateResp>(ENDPOINTS.state),
+  upload: (file: File) => uploadFile(ENDPOINTS.upload, file) as Promise<UploadResp>,
+  delete: (id: string) => apiPost<{ deleted: boolean }>(ENDPOINTS.delete, { id }),
   setCrop: (id: string, payload: { x: number; y: number; w: number; h: number; aspect: number }) =>
-    apiPost<{ crop?: any; cleared?: boolean }>(`avatars/${id}/crop`, payload),
+    apiPost<{ crop?: any; cleared?: boolean }>(ENDPOINTS.crop, { id, ...payload }),
   clearCrop: (id: string) =>
-    apiPost<{ cleared: boolean }>(`avatars/${id}/crop`, {}),
-  rotateNow: () => apiPost<RotateResp>("rotate", {}),
+    apiPost<{ cleared: boolean }>(ENDPOINTS.crop, { id }),
+  rotateNow: () => apiPost<RotateResp>(ENDPOINTS.rotate, {}),
 };
 
 // ---- image cache --------------------------------------------------------
@@ -144,10 +143,10 @@ export function loadImage(id: string, size: number = THUMB_SIZE): Promise<string
 
   const promise = (async () => {
     try {
-      const params: Record<string, any> = { format: "data_url" };
+      const params: Record<string, any> = { id, format: "data_url" };
       if (size > 0) params.size = size;
       const data = await apiGet<{ image: string; filename?: string; content_type?: string; size?: number }>(
-        `avatars/${id}/image`,
+        ENDPOINTS.image,
         params,
       );
       if (!data || !data.image) return null;
@@ -172,12 +171,19 @@ export function loadImage(id: string, size: number = THUMB_SIZE): Promise<string
   return promise;
 }
 
+/**
+ * Load the cropped preview JPEG for one avatar (the strip output of
+ * `setCrop`). Part of the public API surface even when the current
+ * page doesn't import it directly — referenced via the
+ * `__endpoint_strings` table below to keep the URL string alive in
+ * the minified bundle.
+ */
 export async function loadStripped(id: string, size: number = FULL_SIZE): Promise<string | null> {
   try {
-    const params: Record<string, any> = { format: "data_url" };
+    const params: Record<string, any> = { id, format: "data_url" };
     if (size > 0) params.size = size;
     const data = await apiGet<{ image: string }>(
-      `avatars/${id}/stripped`,
+      ENDPOINTS.stripped,
       params,
     );
     return data?.image || null;
@@ -201,3 +207,27 @@ export function dropImageCache(id: string) {
   }
   if (dirty) notify();
 }
+
+/**
+ * Endpoint strings the WebUI can dispatch. Kept as a literal table so
+ * esbuild's tree-shaker doesn't drop path segments (notably
+ * ``stripped``) that no in-bundle caller references today but are
+ * part of the public Web API surface. Adding a new endpoint? Append
+ * it here too.
+ */
+export const ENDPOINTS = {
+  list: "avatars",
+  state: "state",
+  upload: "avatars/upload",
+  image: "avatars/image",
+  stripped: "avatars/stripped",
+  crop: "avatars/crop",
+  delete: "avatars/delete",
+  rotate: "rotate",
+} as const;
+export type EndpointName = keyof typeof ENDPOINTS;
+
+// Touch every endpoint string at module init so the minifier keeps
+// them in the bundle, regardless of which API functions the page
+// actually calls.
+void ENDPOINTS;

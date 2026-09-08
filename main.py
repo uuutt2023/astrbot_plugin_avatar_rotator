@@ -229,28 +229,28 @@ class AvatarRotatorPlugin(Star):
                 "Upload a new avatar image",
             ),
             (
-                f"/{PLUGIN_NAME}/avatars/<id>/image",
+                f"/{PLUGIN_NAME}/avatars/image",
                 self._webui_get_avatar_image,
                 ["GET"],
-                "Fetch the original bytes of an avatar by id",
+                "Fetch the original bytes of an avatar (?id=N)",
             ),
             (
-                f"/{PLUGIN_NAME}/avatars/<id>/crop",
+                f"/{PLUGIN_NAME}/avatars/crop",
                 self._webui_set_or_clear_crop,
                 ["POST"],
-                "Set or clear crop metadata; payload {x,y,w,h} sets, empty clears",
+                "Set or clear crop metadata (?id=N); body {x,y,w,h} sets, empty clears",
             ),
             (
-                f"/{PLUGIN_NAME}/avatars/<id>/delete",
+                f"/{PLUGIN_NAME}/avatars/delete",
                 self._webui_delete_avatar,
                 ["POST"],
-                "Delete an avatar from the library",
+                "Delete an avatar (?id=N)",
             ),
             (
-                f"/{PLUGIN_NAME}/avatars/<id>/stripped",
+                f"/{PLUGIN_NAME}/avatars/stripped",
                 self._webui_download_stripped,
                 ["GET"],
-                "Download the cropped preview of an avatar",
+                "Download the cropped preview of an avatar (?id=N)",
             ),
             (
                 f"/{PLUGIN_NAME}/rotate",
@@ -832,7 +832,7 @@ class AvatarRotatorPlugin(Star):
                 return path
         return None
 
-    def _webui_get_avatar_image(self, id: str) -> Any:
+    def _webui_get_avatar_image(self) -> Any:
         """Return the avatar bytes for the cropper preview.
 
         By default this returns a Starlette ``FileResponse`` (binary JPEG).
@@ -848,11 +848,14 @@ class AvatarRotatorPlugin(Star):
         "blank while loading" gap on slow connections.
 
         The avatar is identified by its 1-based numeric ``id``
-        (see ``_avatar_id``), not the multi-segment ``key`` — this
-        keeps the URL clean of non-ASCII characters and avoids the
-        dashboard's repeated URL-encoding turning ``%E4%B8...`` into
+        (see ``_avatar_id``), passed as ``?id=N`` — the id never
+        appears as a URL path segment, which avoids the dashboard's
+        repeated URL-encoding turning ``%E4%B8...`` into
         ``%25E4%25B8...``.
         """
+        id = self._avatar_id_from_request()
+        if id is None:
+            return _err("missing or invalid ?id=", status_code=400)
         resolved = self._resolve_avatar_by_id(id)
         if resolved is None:
             return _err("avatar not found", status_code=404)
@@ -922,19 +925,22 @@ class AvatarRotatorPlugin(Star):
             target.parent.mkdir(parents=True, exist_ok=True)
             image.save(target, format="JPEG", quality=78, optimize=True)
 
-    async def _webui_set_or_clear_crop(self, id: str) -> Any:
+    async def _webui_set_or_clear_crop(self) -> Any:
         """Persist the crop rectangle or clear it depending on the payload.
 
         A payload containing ``x``, ``y``, ``w`` and ``h`` (all positive
         numbers) sets the crop. Any other payload (missing keys, empty
         body, or non-positive dimensions) clears the crop.
 
-        Args:
-            id: Avatar numeric id (1-based library index from ``_avatar_id``).
+        The target avatar is identified by ``?id=N`` (1-based numeric
+        library index from ``_avatar_id``).
 
         Returns:
             JSON response with the new crop (or ``cleared: true``).
         """
+        id = self._avatar_id_from_request()
+        if id is None:
+            return _err("missing or invalid ?id=", status_code=400)
         resolved = self._resolve_avatar_by_id(id)
         if resolved is None:
             return _err("avatar not found", status_code=404)
@@ -986,8 +992,14 @@ class AvatarRotatorPlugin(Star):
         self._cleanup_stale_crop_cache()
         return _ok({"crop": self.crops[key]})
 
-    async def _webui_delete_avatar(self, id: str) -> Any:
-        """Delete an avatar from the library and clear its crop entry."""
+    async def _webui_delete_avatar(self) -> Any:
+        """Delete an avatar from the library and clear its crop entry.
+
+        The target avatar is identified by ``?id=N``.
+        """
+        id = self._avatar_id_from_request()
+        if id is None:
+            return _err("missing or invalid ?id=", status_code=400)
         resolved = self._resolve_avatar_by_id(id)
         if resolved is None:
             return _err("avatar not found", status_code=404)
@@ -1060,7 +1072,7 @@ class AvatarRotatorPlugin(Star):
             }
         )
 
-    def _webui_download_stripped(self, id: str) -> Any:
+    def _webui_download_stripped(self) -> Any:
         """Return the cropped JPEG used for one avatar (or the original).
 
         Same response shape switch as ``_webui_get_avatar_image``: by default
@@ -1072,7 +1084,12 @@ class AvatarRotatorPlugin(Star):
         sending. The crop modal uses the full-resolution file; the
         ``/stripped`` endpoint in particular is only consumed by the
         modal so we keep the default behaviour for it.
+
+        The target avatar is identified by ``?id=N``.
         """
+        id = self._avatar_id_from_request()
+        if id is None:
+            return _err("missing or invalid ?id=", status_code=400)
         resolved = self._resolve_avatar_by_id(id)
         if resolved is None:
             return _err("avatar not found", status_code=404)

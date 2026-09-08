@@ -1,22 +1,25 @@
 # 更新日志
 
-## 1.4.0 (avatar numeric id 路由 + React 栈优化)
+## 1.4.0 (avatar numeric id query-string + React 栈优化)
 
 后端把头像路由 id 从 `sha256(key)[:16]` (16 进制字符串) 改为基于图库
-**1-based 排序索引** 的数字 id。这彻底绕开 dashboard iframe 的二次
-`encodeURIComponent` 行为:数字 id 不会被特殊编码,而且与路由 `<id>`
-路径段天然匹配,不会出现 `%25E4%25B8...` 这种 "转义后再转义" 的乱码。
+**1-based 排序索引** 的数字 id,并改用 `?id=N` 查询参数的形式 — id 永远
+不会出现在 URL 路径段中,从根本上消除 dashboard iframe 的二次
+`encodeURIComponent` 行为 (中文文件名变 `%25E4%25B8...` 乱码)。
 
 后端改动:
 
 - 新增 `_is_valid_numeric_id(raw)` 校验器:接受纯正整数 (上限 2³¹−1),拒绝任何其它字符串。
 - `_avatar_id(key)` 改为返回 1-based 数字 id,沿用 `_list_avatars()` 的确定性排序,只要文件列表稳定 id 就稳定。
-- `_resolve_avatar_by_id(id)` 直接索引到 `_list_avatars()[id-1]`,O(1) 查表,不需要再线性扫描 sha256。
+- 路由从路径风格 `/avatars/<id>/image` 改为查询风格 `/avatars/image?id=N`,同步改 `crop` / `delete` / `stripped`。
+- `_webui_get_avatar_image` / `_webui_set_or_clear_crop` / `_webui_delete_avatar` / `_webui_download_stripped` 不再接收 `id` 形参,改用 `_avatar_id_from_request()` 从 query 中读取并校验。
 - `_avatar_id_from_request()` 收紧到仅接受 10 位以内纯数字,规避之前 16 进制接受的 `<= 64 chars` ASCII alnum 宽松校验。
 
 WebUI 调整:
 
-- `api.ts` 头部注释更新为 "numeric id (1-based index)";新增 `ImageData` 类型。
+- `api.ts` 新增 `ENDPOINTS` 终结点常量表,确保 esbuild tree-shake 不会把未被 bundle 调用的 endpoint 字符串 (如 `avatars/stripped`) 裁掉。
+- `api.ts` 所有 `loadImage(item.id, ...)` / `API.delete(item.id)` / `API.setCrop(item.id, ...)` / `API.clearCrop(item.id)` / `loadStripped(item.id, ...)` 全部走 `?id=N` 查询参数,body 端点 (crop / delete) 把 id 也放进 body 双重保险。
+- 头部注释更新为 "numeric id via ?id=N";新增 `ImageData` 类型。
 - `App.tsx`、`AvatarCard.tsx`、`CropModal.tsx` 全部改用 `item.id` (字符串数字) 调用,删除已无意义的 `encodeKey()` 残影。
 - `FixedSizeList` 中 `<AvatarCard key={...}>` 由 `item.key` 改成 `item.id`,避免排序变化时的额外挂载。
 - `useUpdateEffect` 替换为 `useRef` + 跳过首渲染,主题初始化与 React 18 strict-mode 双调用相容。
@@ -24,6 +27,11 @@ WebUI 调整:
 - 错误处理:每个 `useMutation` 都补上 `onError` 显示 `toast.fail`,不再吞错。
 - a11y:头像卡片的图标按钮增加 `aria-label`。
 - i18n:新增 `card.cancel` 键,Popconfirm 和 CropModal 共用。
+
+构建:
+
+- `pages/avatar/assets/app.js` 与 `app.css` 已重新由 esbuild 0.18 从 `webui/src/` 构建,使用 `webui/node_modules/@esbuild/win32-x64/esbuild.exe` (绕过 Node 在受限沙箱中的 V8 启动问题)。
+- 在沙箱内运行 `npm run build` 走 Node 仍会失败 (`SetPermissions` reservation),请在本地开发机或 CI 上执行 `node build.cjs` 生成最新 bundle。
 
 依赖保持原状 (Ant Design 5、@tanstack/react-query、zustand、react-window、clsx、@ant-design/icons、dayjs) — 当前沙箱无法 `npm install` 新包,`ahooks` / `immer` 暂不引入,但 store.ts 已按 immer 风格组织,未来可在工作环境里直接接入。
 
